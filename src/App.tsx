@@ -76,6 +76,32 @@ function App() {
   const openFile = useStore(s => s.openFile);
   const rehydrateFile = useStore(s => s.rehydrateFile);
   const triggerSidebarRefresh = useStore(s => s.triggerSidebarRefresh);
+
+  // ── Hash-based deep linking ─────────────────────────────────────────
+  // Sync activeFileKey → hash
+  useEffect(() => {
+    if (activeFileKey) {
+      window.location.hash = `#/${activeFileKey}`;
+    }
+  }, [activeFileKey]);
+
+  // On mount: read hash and auto-open that file
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash.length <= 2) return;
+    // hash format: #/projectDirName/fileName.jsonl
+    const path = hash.slice(2); // strip "#/"
+    const slashIndex = path.indexOf('/');
+    if (slashIndex === -1) return;
+    const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
+    const fileName = decodeURIComponent(path.slice(slashIndex + 1));
+    if (!projectDirName || !fileName) return;
+
+    // Ensure the project exists in the store, then open the file
+    const store = useStore.getState();
+    store.ensureProject(projectDirName, projectDirName);
+    openFile(projectDirName, fileName, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
   const showIncriminating = useStore(s => s.settings.monitor.evalIncriminating);
