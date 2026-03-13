@@ -1329,7 +1329,7 @@ export const useStore = create<WorkspaceState>()(
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(body),
-            }).catch(() => {});
+            }).catch((e) => console.error('Failed to migrate metadata to sidecar:', e));
           }
 
           // Clear migration data from persisted state

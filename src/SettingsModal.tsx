@@ -4,6 +4,7 @@ import { checkMonitorStatus, fetchMonitorPrompts } from './monitor';
 import type { PromptVariant } from './monitor';
 import { useStore } from './store';
 import { putGlobalSettings } from './api';
+import Modal from './Modal';
 
 interface Props {
   onClose: () => void;
@@ -18,15 +19,12 @@ export function SettingsModal({ onClose }: Props) {
   const lockFirstMessage = useStore(s => s.settings.lockFirstMessage);
   const childLock = useStore(s => s.settings.childLock);
   const promptMode = useStore(s => s.settings.promptMode);
-  const creativeDocument = useStore(s => s.settings.creativeDocument);
   const monitorSettings = useStore(s => s.settings.monitor);
-  const [promptFiles, setPromptFiles] = useState<string[]>([]);
   const [promptVariants, setPromptVariants] = useState<PromptVariant[]>([]);
 
   useEffect(() => {
     checkApiStatus().then(status => setApiConfigured(status.configured));
     checkMonitorStatus().then(status => setMonitorAvailable(status.available));
-    fetch('/api/files/prompt-files').then(r => r.json()).then(d => setPromptFiles(d.files || [])).catch(() => {});
     fetchMonitorPrompts().then(setPromptVariants);
   }, []);
 
@@ -39,12 +37,7 @@ export function SettingsModal({ onClose }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Settings</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
+    <Modal title="Settings" onClose={onClose} className="settings-modal">
         <div className="modal-body">
           {/* API Status */}
           <div className="form-group">
@@ -118,20 +111,6 @@ export function SettingsModal({ onClose }: Props) {
               Creative: strategic attack guidance (CREATIVE.md). Faithful: faithful instruction execution (FAITHFUL.md).
             </span>
 
-            {promptFiles.length > 0 && (
-              <div className="form-row">
-                <label className="form-row-label">Creative document</label>
-                <select
-                  value={creativeDocument ?? 'CREATIVE.md'}
-                  onChange={e => putGlobalSettings({ creative_document: e.target.value })}
-                  className="form-input-sm"
-                >
-                  {promptFiles.map(f => (
-                    <option key={f} value={f}>{f}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
 
           {/* Monitor Settings */}
@@ -381,7 +360,6 @@ export function SettingsModal({ onClose }: Props) {
         <div className="modal-footer">
           <button className="primary" onClick={onClose}>Close</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

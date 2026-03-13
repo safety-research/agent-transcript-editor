@@ -20,10 +20,14 @@ export interface PromptVariant {
 export async function fetchMonitorPrompts(): Promise<PromptVariant[]> {
   try {
     const response = await fetch(`${API_BASE}/monitor/prompts`);
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.error(`Failed to fetch monitor prompts: ${response.status} ${response.statusText}`);
+      return [];
+    }
     const data = await response.json();
     return data.prompts ?? [];
-  } catch {
+  } catch (e) {
+    console.error('Failed to fetch monitor prompts (backend down?):', e);
     return [];
   }
 }

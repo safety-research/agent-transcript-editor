@@ -13,28 +13,34 @@ router = APIRouter()
 from sessions import DEFAULT_MODEL  # noqa: E402
 
 
-def _resolve_api_key(api_key_id: str = "default") -> str:
-    """Resolve API key by ID."""
+def resolve_api_key(api_key_id: str = "default", *, required: bool = True) -> str | None:
+    """Resolve Anthropic API key by ID.
+
+    Args:
+        api_key_id: "default" or "alt".
+        required: If True, raises HTTPException when key is missing.
+                  If False, returns None for default key (lets SDK use its own default).
+    """
     if api_key_id == "alt":
-        api_key = os.getenv("ANTHROPIC_API_KEY_ALT")
-        if not api_key:
+        key = os.getenv("ANTHROPIC_API_KEY_ALT")
+        if not key:
             raise HTTPException(
-                status_code=500,
-                detail="ANTHROPIC_API_KEY_ALT not configured. Set it in .env file.",
+                status_code=400,
+                detail="ANTHROPIC_API_KEY_ALT not configured in backend .env",
             )
-    else:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise HTTPException(
-                status_code=500,
-                detail="ANTHROPIC_API_KEY not configured. Set it in .env file.",
-            )
-    return api_key
+        return key
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key and required:
+        raise HTTPException(
+            status_code=500,
+            detail="ANTHROPIC_API_KEY not configured. Set it in .env file.",
+        )
+    return key or None
 
 
 def get_client(api_key_id: str = "default") -> anthropic.Anthropic:
     """Get Anthropic client with API key from environment."""
-    return anthropic.Anthropic(api_key=_resolve_api_key(api_key_id))
+    return anthropic.Anthropic(api_key=resolve_api_key(api_key_id))
 
 
 def get_sync_client() -> anthropic.Anthropic:

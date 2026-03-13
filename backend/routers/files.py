@@ -23,6 +23,8 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
+import sidecar
+
 router = APIRouter()
 
 
@@ -41,49 +43,18 @@ def sanitize_dirname(name: str) -> str:
     return safe
 
 
-# ── Sidecar Helpers ──────────────────────────────────────────────────────
+def _check_within_transcripts(path: Path, transcripts_dir: Path) -> None:
+    """Security: ensure resolved path is within transcripts directory."""
+    if not str(path).startswith(str(transcripts_dir)):
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
-def get_sidecar_path(jsonl_path: Path) -> Path:
-    """Get the .meta.json sidecar path for a .jsonl file."""
-    return jsonl_path.with_suffix(".meta.json")
-
-
-def read_sidecar(jsonl_path: Path) -> dict[str, Any] | None:
-    """Read sidecar metadata if it exists. Returns None if no sidecar."""
-    sidecar = get_sidecar_path(jsonl_path)
-    if not sidecar.exists():
-        return None
-    with open(sidecar, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def write_sidecar(jsonl_path: Path, data: dict[str, Any]) -> None:
-    """Merge data into existing sidecar (or create new). Dict values merge at key level.
-
-    If transcript_hash changed, scores and evals are cleared first to avoid
-    stale results from a previous version of the transcript.
-    """
-    existing = read_sidecar(jsonl_path) or {}
-
-    # If transcript changed, wipe evaluation data — stale scores are worse than none
-    if (
-        "transcript_hash" in data
-        and "transcript_hash" in existing
-        and data["transcript_hash"] != existing["transcript_hash"]
-    ):
-        existing.pop("scores", None)
-        existing.pop("evals", None)
-
-    merged = {**existing, **data}
-    # Shallow-merge any dict values so we don't wipe existing keys
-    for key in data:
-        if isinstance(data[key], dict) and isinstance(existing.get(key), dict):
-            merged[key] = {**existing[key], **data[key]}
-
-    sidecar = get_sidecar_path(jsonl_path)
-    with open(sidecar, "w", encoding="utf-8") as f:
-        json.dump(merged, f, indent=2)
+def _safe_jsonl_name(name: str) -> str:
+    """Sanitize a filename: strip path separators and ensure .jsonl extension."""
+    safe = Path(name).name
+    if not safe.endswith(".jsonl"):
+        safe += ".jsonl"
+    return safe
 
 
 # ── Models ──────────────────────────────────────────────────────────────
@@ -265,9 +236,7 @@ async def delete_project(name: str, delete_files: bool = Query(default=False)):
     transcripts_dir = get_transcripts_dir()
     project_dir = (transcripts_dir / name).resolve()
 
-    # Security: ensure path is within transcripts directory
-    if not str(project_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(project_dir, transcripts_dir)
 
     if not project_dir.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -305,9 +274,7 @@ async def list_transcripts(project: str | None = Query(default=None)):
 
     if project:
         target_dir = (transcripts_dir / project).resolve()
-        # Security check
-        if not str(target_dir).startswith(str(transcripts_dir)):
-            raise HTTPException(status_code=403, detail="Access denied")
+        _check_within_transcripts(target_dir, transcripts_dir)
         if not target_dir.exists():
             return []
     else:
@@ -335,6 +302,9 @@ def _list_transcripts_sync(target_dir: Path, transcripts_dir: Path) -> list[Tran
     """Synchronous file listing — runs in a thread pool."""
     transcripts: list[TranscriptInfo] = []
 
+    import logging
+
+    logger = logging.getLogger(__name__)
     for file_path in target_dir.glob("*.jsonl"):
         try:
             stat = file_path.stat()
@@ -344,11 +314,11 @@ def _list_transcripts_sync(target_dir: Path, transcripts_dir: Path) -> list[Tran
             message_count = None
             try:
                 message_count = file_path.read_bytes().count(b"\n")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to count messages in {file_path.name}: {e}")
 
             # Read sidecar metadata for scores
-            sidecar_data = read_sidecar(file_path)
+            sidecar_data = sidecar.load(file_path)
             scores = sidecar_data.get("scores") if sidecar_data else None
             has_metadata = sidecar_data is not None
 
@@ -363,7 +333,8 @@ def _list_transcripts_sync(target_dir: Path, transcripts_dir: Path) -> list[Tran
                     has_metadata=has_metadata,
                 )
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to list transcript {file_path.name}: {e}")
             continue
 
     # Sort by modified time, newest first
@@ -384,9 +355,7 @@ async def load_transcript(path: str):
     transcripts_dir = get_transcripts_dir()
     file_path = (transcripts_dir / path).resolve()
 
-    # Security: ensure path is within transcripts directory
-    if not str(file_path).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(file_path, transcripts_dir)
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Transcript not found")
@@ -421,18 +390,11 @@ async def save_transcript(request: SaveRequest):
     """
     transcripts_dir = get_transcripts_dir()
 
-    # Sanitize filename
-    name = request.name
-    if not name.endswith(".jsonl"):
-        name += ".jsonl"
-
-    # Remove path separators from filename for security
-    name = Path(name).name
+    name = _safe_jsonl_name(request.name)
 
     if request.project:
         target_dir = (transcripts_dir / request.project).resolve()
-        if not str(target_dir).startswith(str(transcripts_dir)):
-            raise HTTPException(status_code=403, detail="Access denied")
+        _check_within_transcripts(target_dir, transcripts_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         file_path = target_dir / name
     else:
@@ -481,8 +443,7 @@ async def upload_transcript(file: UploadFile, project: str | None = Query(defaul
 
     if project:
         target_dir = (transcripts_dir / project).resolve()
-        if not str(target_dir).startswith(str(transcripts_dir)):
-            raise HTTPException(status_code=403, detail="Access denied")
+        _check_within_transcripts(target_dir, transcripts_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         file_path = target_dir / safe_name
     else:
@@ -501,19 +462,10 @@ async def upload_transcript(file: UploadFile, project: str | None = Query(defaul
                 except json.JSONDecodeError as e:
                     raise HTTPException(status_code=400, detail=f"Invalid JSON on line {i + 1}: {e}")
 
-        # Auto-fix invalid tool IDs before saving
-        auto_fixed: dict[str, Any] = {}
-        try:
-            from fix_ids import fix_transcript
+        # Auto-fix invalid tool IDs before saving (skip minimization — upload is already parsed)
+        from sessions import auto_fix_messages
 
-            input_lines = [json.dumps(m) for m in messages]
-            fixed_entries, id_map = fix_transcript(input_lines)
-            ids_replaced = sum(1 for old, new in id_map.items() if old != new)
-            if ids_replaced > 0:
-                messages = fixed_entries
-                auto_fixed["tool_ids_fixed"] = ids_replaced
-        except ImportError:
-            pass
+        messages, auto_fixed = auto_fix_messages(messages, minimize=False)
 
         # Save the file (with any fixes applied)
         async with aiofiles.open(file_path, mode="w", encoding="utf-8") as f:
@@ -547,9 +499,7 @@ async def delete_transcript(path: str):
     transcripts_dir = get_transcripts_dir()
     file_path = (transcripts_dir / path).resolve()
 
-    # Security: ensure path is within transcripts directory
-    if not str(file_path).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(file_path, transcripts_dir)
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Transcript not found")
@@ -560,9 +510,9 @@ async def delete_transcript(path: str):
 
         file_path.unlink()
         # Also delete sidecar and chat files
-        sidecar = get_sidecar_path(file_path)
-        if sidecar.exists():
-            sidecar.unlink()
+        meta_path = sidecar.get_path(file_path)
+        if meta_path.exists():
+            meta_path.unlink()
         _delete_chat(path, transcripts_dir)
         return {"success": True}
     except Exception as e:
@@ -578,13 +528,9 @@ async def write_meta(request: MetaRequest):
     transcripts_dir = get_transcripts_dir()
     target_dir = (transcripts_dir / request.project).resolve()
 
-    if not str(target_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(target_dir, transcripts_dir)
 
-    file_name = Path(request.file_name).name
-    if not file_name.endswith(".jsonl"):
-        file_name += ".jsonl"
-
+    file_name = _safe_jsonl_name(request.file_name)
     file_path = target_dir / file_name
     # Allow writing metadata even if jsonl doesn't exist yet (pre-save)
 
@@ -610,7 +556,7 @@ async def write_meta(request: MetaRequest):
         return {"success": True}
 
     try:
-        await asyncio.to_thread(write_sidecar, file_path, data)
+        await asyncio.to_thread(sidecar.save, file_path, data)
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -622,13 +568,10 @@ async def rename_file(request: RenameFileRequest):
     transcripts_dir = get_transcripts_dir()
     project_dir = (transcripts_dir / request.project).resolve()
 
-    if not str(project_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(project_dir, transcripts_dir)
 
     old_name = Path(request.old_name).name
-    new_name = Path(request.new_name).name
-    if not new_name.endswith(".jsonl"):
-        new_name += ".jsonl"
+    new_name = _safe_jsonl_name(request.new_name)
 
     old_path = project_dir / old_name
     new_path = project_dir / new_name
@@ -641,9 +584,9 @@ async def rename_file(request: RenameFileRequest):
     try:
         old_path.rename(new_path)
         # Rename sidecar too
-        old_sidecar = get_sidecar_path(old_path)
+        old_sidecar = sidecar.get_path(old_path)
         if old_sidecar.exists():
-            new_sidecar = get_sidecar_path(new_path)
+            new_sidecar = sidecar.get_path(new_path)
             old_sidecar.rename(new_sidecar)
 
         # Rekey session if one exists
@@ -668,10 +611,8 @@ async def move_file(request: MoveFileRequest):
     source_dir = (transcripts_dir / request.source_project).resolve()
     target_dir = (transcripts_dir / request.target_project).resolve()
 
-    if not str(source_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
-    if not str(target_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(source_dir, transcripts_dir)
+    _check_within_transcripts(target_dir, transcripts_dir)
 
     file_name = Path(request.file_name).name
     source_path = source_dir / file_name
@@ -687,9 +628,9 @@ async def move_file(request: MoveFileRequest):
     try:
         source_path.rename(target_path)
         # Move sidecar too
-        source_sidecar = get_sidecar_path(source_path)
+        source_sidecar = sidecar.get_path(source_path)
         if source_sidecar.exists():
-            target_sidecar = get_sidecar_path(target_path)
+            target_sidecar = sidecar.get_path(target_path)
             source_sidecar.rename(target_sidecar)
 
         # Rekey session if one exists
@@ -713,8 +654,7 @@ async def duplicate_file(request: DuplicateFileRequest):
     transcripts_dir = get_transcripts_dir()
     project_dir = (transcripts_dir / request.project).resolve()
 
-    if not str(project_dir).startswith(str(transcripts_dir)):
-        raise HTTPException(status_code=403, detail="Access denied")
+    _check_within_transcripts(project_dir, transcripts_dir)
 
     file_name = Path(request.file_name).name
     source_path = project_dir / file_name
@@ -738,10 +678,10 @@ async def duplicate_file(request: DuplicateFileRequest):
         shutil.copy2(source_path, dest_path)
 
         # Copy sidecar, stripping chat
-        sidecar_data = read_sidecar(source_path)
+        sidecar_data = sidecar.load(source_path)
         if sidecar_data:
             cleaned = {k: v for k, v in sidecar_data.items() if k != "chat"}
-            sidecar_path = get_sidecar_path(dest_path)
+            sidecar_path = sidecar.get_path(dest_path)
             with open(sidecar_path, "w", encoding="utf-8") as f:
                 json.dump(cleaned, f, indent=2)
 
@@ -751,15 +691,3 @@ async def duplicate_file(request: DuplicateFileRequest):
 
 
 # ── Prompt Files ──────────────────────────────────────────────────────
-
-
-@router.get("/prompt-files")
-async def list_prompt_files():
-    """List available prompt documents (*.md files in project root)."""
-    project_root = Path(__file__).resolve().parent.parent.parent
-    prompt_files = sorted(
-        f.name
-        for f in project_root.glob("*.md")
-        if f.name not in ("README.md", "TEST_PLAN.md", "OPENSOURCE_PLAN.md", "WRITEUP.md")
-    )
-    return {"files": prompt_files}

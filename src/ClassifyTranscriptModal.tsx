@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { MechanismDict } from './mechanismUtils';
+import Modal from './Modal';
 
 interface Props {
   onClassify: (data: { outcome: string | null; scenario: string | null; mechanism: MechanismDict | null }) => void;
@@ -40,12 +41,7 @@ export function ClassifyTranscriptModal({ onClassify, onDismiss }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onDismiss}>
-      <div className="modal classify-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Classify Transcript</h3>
-          <button className="modal-close" onClick={onDismiss}>&times;</button>
-        </div>
+    <Modal title="Classify Transcript" onClose={onDismiss} className="classify-modal">
         <div className="modal-body">
           {mode === 'choose' ? (
             <div className="classify-choices">
@@ -117,7 +113,6 @@ export function ClassifyTranscriptModal({ onClassify, onDismiss }: Props) {
             <button className="primary" onClick={handleSave}>Save</button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

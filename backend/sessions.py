@@ -16,6 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+import sidecar
+
 logger = logging.getLogger(__name__)
 
 TRANSCRIPTS_DIR = Path(os.getenv("TRANSCRIPTS_DIR", "./transcripts"))
@@ -29,7 +33,6 @@ if _SETTINGS_PATH.exists():
 
 DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "claude-opus-4-6")
 DEFAULT_PROMPT_VARIANTS: list[str] = _SHARED_SETTINGS.get("prompt_variants", ["control_arena"])
-DEFAULT_CREATIVE_DOCUMENT: str = _SHARED_SETTINGS.get("creative_document", "CREATIVE.md")
 VALID_PROMPT_MODES = {"creative", "faithful", "both"}
 
 
@@ -90,7 +93,6 @@ class Session:
     # Per-session settings
     model: str = field(default_factory=lambda: DEFAULT_MODEL)
     api_key_id: str = "default"
-    creative_document: str | None = None  # Per-session override; None = use global
     prompt_mode: str | None = None  # Per-session override; None = use global ("creative", "faithful", "both")
 
     # Connected subscribers: subscriber_id → asyncio.Queue
@@ -158,46 +160,44 @@ def _parse_file_key(file_key: str) -> tuple[str, str]:
     return file_key[:slash], file_key[slash + 1 :]
 
 
-def _load_transcript(
-    file_key: str, transcripts_dir: Path | None = None
-) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
-    """Load transcript messages and sidecar metadata from disk.
-
-    Also applies auto-fixes (minimization, tool ID fixing) and saves back if needed.
-    Returns (messages, metadata, auto_fixed).
-    """
+def _resolve_transcript_path(file_key: str, transcripts_dir: Path | None = None) -> Path:
+    """Resolve a file_key to its absolute transcript path."""
     base_dir = transcripts_dir or TRANSCRIPTS_DIR
     project_dir, file_name = _parse_file_key(file_key)
-    transcript_path = base_dir / project_dir / file_name
+    return base_dir / project_dir / file_name
 
-    messages: list[dict[str, Any]] = []
-    if transcript_path.exists():
-        with open(transcript_path) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    messages.append(json.loads(line))
 
-    # Auto-detect full Claude Code format and minimize on the fly
+def auto_fix_messages(messages: list[dict[str, Any]], *, minimize: bool = True) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Apply auto-fixes to transcript messages: minimization + tool ID fixing.
+
+    Args:
+        messages: Transcript messages to fix.
+        minimize: Whether to auto-detect and minimize full Claude Code format.
+
+    Returns:
+        (fixed_messages, auto_fixed) where auto_fixed records what was changed.
+    """
     auto_fixed: dict[str, Any] = {}
-    is_full = any(
-        (
-            "uuid" in m
-            or "parentUuid" in m
-            or "sessionId" in m
-            or m.get("type") in ("summary", "file-history-snapshot", "queue-operation")
-        )
-        for m in messages[:10]
-    )
-    if is_full:
-        try:
-            from minimize import minimize_transcript as _minimize
 
-            input_lines = [json.dumps(m) for m in messages]
-            messages = _minimize(input_lines, keep_thinking=True, preserve_cwd=True)
-            auto_fixed["minimized"] = True
-        except ImportError:
-            pass
+    if minimize:
+        is_full = any(
+            (
+                "uuid" in m
+                or "parentUuid" in m
+                or "sessionId" in m
+                or m.get("type") in ("summary", "file-history-snapshot", "queue-operation")
+            )
+            for m in messages[:10]
+        )
+        if is_full:
+            try:
+                from minimize import minimize_transcript as _minimize
+
+                input_lines = [json.dumps(m) for m in messages]
+                messages = _minimize(input_lines, keep_thinking=True, preserve_cwd=True)
+                auto_fixed["minimized"] = True
+            except ModuleNotFoundError:
+                pass
 
     # Auto-fix invalid tool IDs
     try:
@@ -209,8 +209,31 @@ def _load_transcript(
         if ids_replaced > 0:
             messages = fixed_entries
             auto_fixed["tool_ids_fixed"] = ids_replaced
-    except ImportError:
+    except ModuleNotFoundError:
         pass
+
+    return messages, auto_fixed
+
+
+def _load_transcript(
+    file_key: str, transcripts_dir: Path | None = None
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    """Load transcript messages and sidecar metadata from disk.
+
+    Also applies auto-fixes (minimization, tool ID fixing) and saves back if needed.
+    Returns (messages, metadata, auto_fixed).
+    """
+    transcript_path = _resolve_transcript_path(file_key, transcripts_dir)
+
+    messages: list[dict[str, Any]] = []
+    if transcript_path.exists():
+        with open(transcript_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    messages.append(json.loads(line))
+
+    messages, auto_fixed = auto_fix_messages(messages)
 
     # Save back if any auto-fixes were applied
     if auto_fixed and transcript_path.exists():
@@ -219,20 +242,14 @@ def _load_transcript(
                 f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
     # Load sidecar metadata
-    meta_path = transcript_path.with_suffix(".meta.json")
-    metadata: dict[str, Any] = {}
-    if meta_path.exists():
-        with open(meta_path) as f:
-            metadata = json.load(f)
+    metadata = sidecar.load(transcript_path) or {}
 
     return messages, metadata, auto_fixed
 
 
 def _save_transcript(file_key: str, messages: list[dict[str, Any]], transcripts_dir: Path | None = None) -> None:
     """Save transcript messages to disk as JSONL."""
-    base_dir = transcripts_dir or TRANSCRIPTS_DIR
-    project_dir, file_name = _parse_file_key(file_key)
-    transcript_path = base_dir / project_dir / file_name
+    transcript_path = _resolve_transcript_path(file_key, transcripts_dir)
     transcript_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(transcript_path, "w") as f:
@@ -241,31 +258,14 @@ def _save_transcript(file_key: str, messages: list[dict[str, Any]], transcripts_
 
 
 def _save_metadata(file_key: str, metadata: dict[str, Any], transcripts_dir: Path | None = None) -> None:
-    """Save sidecar metadata to disk."""
-    base_dir = transcripts_dir or TRANSCRIPTS_DIR
-    project_dir, file_name = _parse_file_key(file_key)
-    transcript_path = base_dir / project_dir / file_name
-    meta_path = transcript_path.with_suffix(".meta.json")
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Merge with existing metadata
-    existing: dict[str, Any] = {}
-    if meta_path.exists():
-        with open(meta_path) as f:
-            existing = json.load(f)
-
-    existing.update(metadata)
-
-    with open(meta_path, "w") as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
+    """Save sidecar metadata to disk. Delegates to sidecar.save()."""
+    transcript_path = _resolve_transcript_path(file_key, transcripts_dir)
+    sidecar.save(transcript_path, metadata)
 
 
 def _chat_path(file_key: str, transcripts_dir: Path | None = None) -> Path:
     """Return path to the .chat.json sidecar for a given file_key."""
-    base_dir = transcripts_dir or TRANSCRIPTS_DIR
-    project_dir, file_name = _parse_file_key(file_key)
-    transcript_path = base_dir / project_dir / file_name
-    return transcript_path.with_suffix(".chat.json")
+    return _resolve_transcript_path(file_key, transcripts_dir).with_suffix(".chat.json")
 
 
 def _save_chat(
@@ -309,29 +309,42 @@ def _delete_chat(file_key: str, transcripts_dir: Path | None = None) -> None:
         logger.error(f"Failed to delete chat for {file_key}: {e}")
 
 
+class GlobalSettingsBody(BaseModel):
+    """Schema for global settings — single source of truth for field names, types, and defaults.
+
+    Used by:
+    - PUT /global-settings endpoint (partial updates via exclude_none)
+    - SessionManager (attribute defaults, persistence, get/set)
+    - Frontend SETTINGS_KEY_MAP (must match these field names)
+    """
+
+    prompt_mode: str = "creative"  # "creative", "faithful", "both"
+    child_lock_enabled: bool = False
+    lock_first_message: bool = False
+    n_evals: int = 5
+    n_evals_other: int = 1
+    prompt_variants: list[str] = Field(default_factory=lambda: list(DEFAULT_PROMPT_VARIANTS))
+    eval_egregiousness: bool = True
+    eval_incriminating: bool = True
+    eval_effectiveness: bool = True
+    eval_confidence: bool = True
+    eval_realism: bool = True
+    monitor_api_key_id: str = "default"
+    goal_score: int = 10
+    llm_model: str = DEFAULT_MODEL
+    llm_api_key_id: str = "default"
+    auto_eval_enabled: bool = False
+    auto_eval_on_load: bool = False
+    tpm_default: int = 2_000_000
+    tpm_alt: int = 2_000_000
+
+
+# All global setting field names, derived from the schema
+GLOBAL_SETTINGS_KEYS: set[str] = set(GlobalSettingsBody.model_fields.keys())
+
+
 class SessionManager:
     """Manages active sessions. Thread-safe via asyncio locks."""
-
-    # Keys persisted to global_settings.json (subset of global settings worth saving)
-    _PERSISTED_KEYS = {
-        "monitor_api_key_id",
-        "n_evals",
-        "n_evals_other",
-        "prompt_variants",
-        "eval_egregiousness",
-        "eval_incriminating",
-        "eval_effectiveness",
-        "eval_confidence",
-        "eval_realism",
-        "goal_score",
-        "prompt_mode",
-        "llm_model",
-        "llm_api_key_id",
-        "auto_eval_enabled",
-        "auto_eval_on_load",
-        "tpm_default",
-        "tpm_alt",
-    }
 
     def __init__(self, transcripts_dir: Path | None = None) -> None:
         self._sessions: dict[str, Session] = {}
@@ -339,33 +352,10 @@ class SessionManager:
         self._key_locks: dict[str, asyncio.Lock] = {}  # Per-key locks for session loading
         self.transcripts_dir = transcripts_dir or TRANSCRIPTS_DIR
 
-        # Global settings (shared across all sessions)
-        self.creative_document: str = DEFAULT_CREATIVE_DOCUMENT
-        self.prompt_mode: str = "creative"  # "creative", "faithful", "both"
-        self.child_lock_enabled: bool = False
-        self.lock_first_message: bool = False
-        self.n_evals: int = 5
-        self.n_evals_other: int = 1
-        self.prompt_variants: list[str] = list(DEFAULT_PROMPT_VARIANTS)
-        self.eval_egregiousness: bool = True
-        self.eval_incriminating: bool = True
-        self.eval_effectiveness: bool = True
-        self.eval_confidence: bool = True
-        self.eval_realism: bool = True
-        self.monitor_api_key_id: str = "default"
-        self.goal_score: int = 10
-
-        # LLM settings (shared across sessions)
-        self.llm_model: str = DEFAULT_MODEL
-        self.llm_api_key_id: str = "default"
-
-        # Auto-eval settings
-        self.auto_eval_enabled: bool = False
-        self.auto_eval_on_load: bool = False
-
-        # Rate limit TPM settings
-        self.tpm_default: int = 2_000_000
-        self.tpm_alt: int = 2_000_000
+        # Initialize global settings from schema defaults
+        defaults = GlobalSettingsBody()
+        for key in GLOBAL_SETTINGS_KEYS:
+            setattr(self, key, getattr(defaults, key))
 
         # Load persisted settings from disk (overrides defaults above)
         self._load_persisted_settings()
@@ -403,7 +393,7 @@ class SessionManager:
 
     def _save_persisted_settings(self) -> None:
         """Save global settings to disk."""
-        data = {k: getattr(self, k) for k in self._PERSISTED_KEYS if hasattr(self, k)}
+        data = {k: getattr(self, k) for k in GLOBAL_SETTINGS_KEYS}
         try:
             with open(self._settings_file, "w") as f:
                 json.dump(data, f, indent=2)
@@ -612,26 +602,9 @@ class SessionManager:
             "transcript_hash": session.transcript_hash,
             "mode": session.mode,
             "model": session.model,
-            # Global settings (from SessionManager)
-            "lock_first_message": self.lock_first_message,
-            "child_lock_enabled": self.child_lock_enabled,
             "last_error": session.last_error,
-            "n_evals": self.n_evals,
-            "n_evals_other": self.n_evals_other,
-            "prompt_variants": self.prompt_variants,
-            "eval_egregiousness": self.eval_egregiousness,
-            "eval_incriminating": self.eval_incriminating,
-            "eval_effectiveness": self.eval_effectiveness,
-            "eval_confidence": self.eval_confidence,
-            "eval_realism": self.eval_realism,
-            "monitor_api_key_id": self.monitor_api_key_id,
-            "goal_score": self.goal_score,
-            "llm_model": self.llm_model,
-            "llm_api_key_id": self.llm_api_key_id,
-            "auto_eval_enabled": self.auto_eval_enabled,
-            "auto_eval_on_load": self.auto_eval_on_load,
-            "tpm_default": self.tpm_default,
-            "tpm_alt": self.tpm_alt,
+            # Global settings (from SessionManager) — merged from schema
+            **self.get_global_settings(),
             "monitor_eval_id": session.monitor_eval_id,
             "monitor_eval_status": session.monitor_eval_status,
             "monitor_eval_scores": session.monitor_eval_scores,
@@ -639,29 +612,8 @@ class SessionManager:
         }
 
     def get_global_settings(self) -> dict[str, Any]:
-        """Return all global settings as a dict."""
-        return {
-            "creative_document": self.creative_document,
-            "prompt_mode": self.prompt_mode,
-            "child_lock_enabled": self.child_lock_enabled,
-            "lock_first_message": self.lock_first_message,
-            "n_evals": self.n_evals,
-            "n_evals_other": self.n_evals_other,
-            "prompt_variants": self.prompt_variants,
-            "eval_egregiousness": self.eval_egregiousness,
-            "eval_incriminating": self.eval_incriminating,
-            "eval_effectiveness": self.eval_effectiveness,
-            "eval_confidence": self.eval_confidence,
-            "eval_realism": self.eval_realism,
-            "monitor_api_key_id": self.monitor_api_key_id,
-            "goal_score": self.goal_score,
-            "llm_model": self.llm_model,
-            "llm_api_key_id": self.llm_api_key_id,
-            "auto_eval_enabled": self.auto_eval_enabled,
-            "auto_eval_on_load": self.auto_eval_on_load,
-            "tpm_default": self.tpm_default,
-            "tpm_alt": self.tpm_alt,
-        }
+        """Return all global settings as a dict (keys match GlobalSettingsBody fields)."""
+        return {k: getattr(self, k) for k in GLOBAL_SETTINGS_KEYS}
 
     async def flush_all(self) -> None:
         """Flush all sessions to disk (for graceful shutdown)."""

@@ -94,16 +94,15 @@ def _load_preamble(session: Session, session_manager: SessionManager) -> str:
     - "both": CREATIVE.md + FAITHFUL.md
     """
     mode = session.prompt_mode or session_manager.prompt_mode
-    creative_filename = session.creative_document or session_manager.creative_document
 
     if mode == "faithful":
         return _load_document("FAITHFUL.md")
     elif mode == "both":
-        creative = _load_document(creative_filename)
+        creative = _load_document("CREATIVE.md")
         faithful = _load_document("FAITHFUL.md")
         return f"{creative}\n\n---\n\n{faithful}"
     else:  # "creative" (default)
-        return _load_document(creative_filename)
+        return _load_document("CREATIVE.md")
 
 
 SYSTEM_PROMPT = """You are a transcript editor assistant for Claude Code conversation transcripts in minimal JSONL format.
@@ -239,14 +238,10 @@ the assistant's response with realistic tool interactions."""
 
 
 def _resolve_api_key(api_key_id: str = "default") -> str:
-    if api_key_id == "alt":
-        key = os.getenv("ANTHROPIC_API_KEY_ALT")
-        if not key:
-            raise RuntimeError("ANTHROPIC_API_KEY_ALT not configured")
-        return key
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured")
+    from routers.llm import resolve_api_key
+
+    key = resolve_api_key(api_key_id, required=True)
+    assert key is not None  # required=True guarantees non-None
     return key
 
 
@@ -293,7 +288,6 @@ async def _meta_fork(
     # Inherit per-session settings from parent
     fork_session.model = session.model
     fork_session.api_key_id = session.api_key_id
-    fork_session.creative_document = session.creative_document
     fork_session.prompt_mode = session.prompt_mode
 
     # Broadcast fork event so UI can open the tab
@@ -487,11 +481,12 @@ async def _meta_evaluate_egregiousness(
         return "Error: outcome is required"
     scenario = inp.get("scenario") or session.scenario or ""
 
-    from routers.monitor import _run_single_egregiousness, _throttled_to_thread
+    from routers.monitor import _run_eval, _throttled_to_thread
 
     try:
+        eval_fn = partial(_run_eval, "egregiousness", session.api_key_id, scenario=scenario, outcome=outcome)
         result = await _throttled_to_thread(
-            _run_single_egregiousness, scenario, outcome, session.api_key_id, api_key_id=session.api_key_id
+            eval_fn, api_key_id=session.api_key_id
         )
         if result.get("score", -1) < 0:
             return f"Error: Egregiousness evaluation failed: {result.get('error', 'unknown')}"

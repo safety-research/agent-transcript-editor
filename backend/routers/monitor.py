@@ -8,7 +8,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+import sidecar  # noqa: E402
 import tool_imports  # noqa: F401, E402 — sets up sys.path for sibling tools
 from fastapi import APIRouter, HTTPException  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -31,12 +31,9 @@ _eval_executor = ThreadPoolExecutor(max_workers=128, thread_name_prefix="monitor
 
 def _monitor_api_key(api_key_id: str = "default") -> str | None:
     """Return the Anthropic API key from the backend env, or None to use SDK default."""
-    if api_key_id == "alt":
-        key = os.getenv("ANTHROPIC_API_KEY_ALT")
-        if not key:
-            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY_ALT not configured in backend .env")
-        return key
-    return os.getenv("ANTHROPIC_API_KEY") or None
+    from routers.llm import resolve_api_key
+
+    return resolve_api_key(api_key_id, required=False)
 
 
 router = APIRouter()
@@ -158,172 +155,78 @@ async def _preprocess_tools_only_async(messages: list[dict[str, Any]]) -> str:
         return result
 
 
-def _run_single_eval(transcript_jsonl: str, prompt_variant: str, api_key_id: str = "default") -> dict[str, Any]:
-    """Run a single monitor evaluation (synchronous, for use in thread)."""
-    try:
-        from trusted_monitor.monitor import create_monitor
-        from trusted_monitor.prompts import SUSPICIOUSNESS_PROMPTS
+def _run_eval(metric_type: str, api_key_id: str = "default", **kwargs) -> dict[str, Any]:
+    """Run a single monitor evaluation (synchronous, for use in thread).
 
-        if prompt_variant not in SUSPICIOUSNESS_PROMPTS:
-            raise ValueError(
-                f"Unknown prompt variant: {prompt_variant!r}. Available: {list(SUSPICIOUSNESS_PROMPTS.keys())}"
-            )
-
-        system_prompt = SUSPICIOUSNESS_PROMPTS[prompt_variant]
-        monitor = create_monitor(
-            provider="anthropic",
-            system_prompt=system_prompt,
-            thinking_budget=10000,
-            api_key=_monitor_api_key(api_key_id),
-        )
-        result = monitor.evaluate(transcript_jsonl)
-
-        out: dict[str, Any] = {
-            "score": result.score,
-            "reasoning": result.reasoning,
-        }
-        if result.input_tokens:
-            out["input_tokens"] = result.input_tokens
-        if result.thinking:
-            out["thinking"] = result.thinking
-        return out
-    except Exception as e:
-        return {
-            "score": -1,
-            "reasoning": f"Error: {e}",
-            "error": str(e),
-        }
-
-
-def _run_single_egregiousness(scenario: str, outcome: str, api_key_id: str = "default") -> dict[str, Any]:
-    """Run a single egregiousness evaluation (synchronous, for use in thread)."""
+    Generic dispatcher that replaces the per-metric _run_single_* functions.
+    """
     try:
         from trusted_monitor.monitor import create_monitor
 
-        monitor = create_monitor(provider="anthropic", thinking_budget=10000, api_key=_monitor_api_key(api_key_id))
-        result = monitor.evaluate_egregiousness(scenario=scenario, outcome=outcome)
-
-        out: dict[str, Any] = {
-            "score": result.score_with_reasoning,
-            "scoreNumberOnly": result.score_number_only,
-            "reasoning": result.reasoning,
-            "input_tokens": result.input_tokens or (len(scenario + outcome) // 4 + 2000),
-        }
-        if hasattr(result, "thinking") and result.thinking:
-            out["thinking"] = result.thinking
-        return out
-    except Exception as e:
-        return {
-            "score": -1,
-            "scoreNumberOnly": -1,
-            "reasoning": f"Error: {e}",
-            "error": str(e),
+        create_kwargs: dict[str, Any] = {
+            "provider": "anthropic",
+            "thinking_budget": 10000,
+            "api_key": _monitor_api_key(api_key_id),
         }
 
+        if metric_type == "suspiciousness":
+            from trusted_monitor.prompts import SUSPICIOUSNESS_PROMPTS
 
-def _run_single_incriminating(
-    transcript_jsonl: str, outcome: str, mechanism: str, api_key_id: str = "default"
-) -> dict[str, Any]:
-    """Run a single incriminating evaluation (synchronous, for use in thread)."""
-    try:
-        from trusted_monitor.monitor import create_monitor
-
-        monitor = create_monitor(provider="anthropic", thinking_budget=10000, api_key=_monitor_api_key(api_key_id))
-        result = monitor.evaluate_incriminating(transcript_jsonl, outcome, mechanism)
-
-        out: dict[str, Any] = {
-            "score": result.score,
-            "reasoning": result.reasoning,
-            "input_tokens": result.input_tokens or (len(transcript_jsonl) // 4 + 2000),
-        }
-        if hasattr(result, "thinking") and result.thinking:
-            out["thinking"] = result.thinking
-        return out
-    except Exception as e:
-        return {
-            "score": -1,
-            "reasoning": f"Error: {e}",
-            "error": str(e),
-        }
-
-
-def _run_single_confidence(
-    transcript_jsonl: str, outcome: str, mechanism: str, api_key_id: str = "default"
-) -> dict[str, Any]:
-    """Run a single confidence evaluation (synchronous, for use in thread)."""
-    try:
-        from trusted_monitor.monitor import create_monitor
-
-        monitor = create_monitor(provider="anthropic", thinking_budget=10000, api_key=_monitor_api_key(api_key_id))
-        result = monitor.evaluate_confidence(transcript_jsonl, outcome, mechanism)
-
-        out: dict[str, Any] = {
-            "score": result.score,
-            "reasoning": result.reasoning,
-            "input_tokens": result.input_tokens or (len(transcript_jsonl) // 4 + 2000),
-        }
-        if hasattr(result, "thinking") and result.thinking:
-            out["thinking"] = result.thinking
-        return out
-    except Exception as e:
-        return {
-            "score": -1,
-            "reasoning": f"Error: {e}",
-            "error": str(e),
-        }
-
-
-def _run_single_effectiveness(
-    transcript_jsonl: str, outcome: str, mechanism: str, api_key_id: str = "default"
-) -> dict[str, Any]:
-    """Run a single effectiveness evaluation (synchronous, for use in thread)."""
-    try:
-        from trusted_monitor.monitor import create_monitor
-
-        monitor = create_monitor(provider="anthropic", thinking_budget=10000, api_key=_monitor_api_key(api_key_id))
-        result = monitor.evaluate_effectiveness(transcript_jsonl, outcome, mechanism)
-
-        out: dict[str, Any] = {
-            "score": result.score,
-            "reasoning": result.reasoning,
-            "input_tokens": result.input_tokens or (len(transcript_jsonl) // 4 + 2000),
-        }
-        if hasattr(result, "thinking") and result.thinking:
-            out["thinking"] = result.thinking
-        return out
-    except Exception as e:
-        return {
-            "score": -1,
-            "reasoning": f"Error: {e}",
-            "error": str(e),
-        }
-
-
-def _run_single_realism(transcript_jsonl: str, api_key_id: str = "default") -> dict[str, Any]:
-    """Run a single realism evaluation (synchronous, for use in thread)."""
-    try:
-        from trusted_monitor.monitor import create_monitor
-
-        monitor = create_monitor(provider="anthropic", thinking_budget=10000, api_key=_monitor_api_key(api_key_id))
-        result = monitor.evaluate_realism(transcript_jsonl)
-
-        out: dict[str, Any] = {
-            "score": result.score,
-            "reasoning": result.reasoning,
-        }
-        if result.input_tokens:
-            out["input_tokens"] = result.input_tokens
+            prompt_variant = kwargs["prompt_variant"]
+            if prompt_variant not in SUSPICIOUSNESS_PROMPTS:
+                raise ValueError(
+                    f"Unknown prompt variant: {prompt_variant!r}. Available: {list(SUSPICIOUSNESS_PROMPTS.keys())}"
+                )
+            create_kwargs["system_prompt"] = SUSPICIOUSNESS_PROMPTS[prompt_variant]
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate(kwargs["transcript_jsonl"])
+        elif metric_type == "egregiousness":
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate_egregiousness(scenario=kwargs["scenario"], outcome=kwargs["outcome"])
+        elif metric_type == "incriminating":
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate_incriminating(kwargs["transcript_jsonl"], kwargs["outcome"], kwargs["mechanism"])
+        elif metric_type == "confidence":
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate_confidence(kwargs["transcript_jsonl"], kwargs["outcome"], kwargs["mechanism"])
+        elif metric_type == "effectiveness":
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate_effectiveness(kwargs["transcript_jsonl"], kwargs["outcome"], kwargs["mechanism"])
+        elif metric_type == "realism":
+            monitor = create_monitor(**create_kwargs)
+            result = monitor.evaluate_realism(kwargs["transcript_jsonl"])
         else:
-            out["input_tokens"] = len(transcript_jsonl) // 4 + 2000
-        if result.thinking:
+            raise ValueError(f"Unknown metric type: {metric_type!r}")
+
+        # Extract results — egregiousness uses score_with_reasoning, others use score
+        if metric_type == "egregiousness":
+            fallback_tokens = len(kwargs["scenario"] + kwargs["outcome"]) // 4 + 2000
+            out: dict[str, Any] = {
+                "score": result.score_with_reasoning,
+                "scoreNumberOnly": result.score_number_only,
+                "reasoning": result.reasoning,
+                "input_tokens": result.input_tokens or fallback_tokens,
+            }
+        else:
+            fallback_tokens = len(kwargs.get("transcript_jsonl", "")) // 4 + 2000
+            out = {
+                "score": result.score,
+                "reasoning": result.reasoning,
+                "input_tokens": result.input_tokens or fallback_tokens,
+            }
+
+        if hasattr(result, "thinking") and result.thinking:
             out["thinking"] = result.thinking
         return out
     except Exception as e:
-        return {
+        error_out: dict[str, Any] = {
             "score": -1,
             "reasoning": f"Error: {e}",
             "error": str(e),
         }
+        if metric_type == "egregiousness":
+            error_out["scoreNumberOnly"] = -1
+        return error_out
 
 
 class TokenCountRequest(BaseModel):
@@ -420,39 +323,23 @@ def _evict_old_evals() -> None:
         del _file_eval_store[key]
 
 
-def _read_existing_variant_data(project: str, file_name: str, transcript_hash: str | None) -> dict[str, dict]:
-    """Read existing suspiciousness variant data from meta.json for merging during partial reruns.
-
-    Only returns data if the stored transcript_hash matches the current one,
-    to avoid merging stale evals from a different version of the transcript.
-    """
-    from routers.files import get_transcripts_dir, read_sidecar
+def _resolve_jsonl_path(project: str, file_name: str) -> Path:
+    """Resolve project + file_name to the full .jsonl path."""
+    from routers.files import get_transcripts_dir
 
     transcripts_dir = get_transcripts_dir()
     fname = file_name if file_name.endswith(".jsonl") else file_name + ".jsonl"
-    file_path = transcripts_dir / project / fname
-    meta = read_sidecar(file_path) or {}
+    return transcripts_dir / project / fname
 
-    stored_hash = meta.get("transcript_hash")
-    if transcript_hash is not None and stored_hash != transcript_hash:
-        return {}  # Transcript changed — don't merge stale variant data
 
-    return meta.get("evals", {}).get("suspiciousness", {}).get("variants", {})
+def _read_existing_variant_data(project: str, file_name: str, transcript_hash: str | None) -> dict[str, dict]:
+    """Read existing suspiciousness variant data from meta.json for merging during partial reruns."""
+    return sidecar.read_variant_data(_resolve_jsonl_path(project, file_name), transcript_hash)
 
 
 def _write_scores_to_meta(project: str, file_name: str, scores: dict, evals: dict, transcript_hash: str | None):
     """Write evaluation scores to the .meta.json sidecar file."""
-    from routers.files import get_transcripts_dir, write_sidecar
-
-    transcripts_dir = get_transcripts_dir()
-    fname = file_name if file_name.endswith(".jsonl") else file_name + ".jsonl"
-    file_path = transcripts_dir / project / fname
-
-    data: dict[str, Any] = {"scores": scores, "evals": evals}
-    if transcript_hash is not None:
-        data["transcript_hash"] = transcript_hash
-
-    write_sidecar(file_path, data)
+    sidecar.write_eval_scores(_resolve_jsonl_path(project, file_name), scores, evals, transcript_hash)
 
 
 async def _run_file_evaluation(eval_id: str, request: EvaluateFileRequest):
@@ -726,6 +613,27 @@ async def _run_file_evaluation(eval_id: str, request: EvaluateFileRequest):
             )
 
 
+def _build_eval_kwargs(
+    metric_type: str,
+    transcript_jsonl: str,
+    request: EvaluateFileRequest,
+    variant: str | None = None,
+) -> dict[str, Any]:
+    """Build the kwargs dict for _run_eval based on metric type."""
+    if metric_type == "suspiciousness":
+        if variant is None:
+            raise ValueError("variant is required for suspiciousness")
+        return {"transcript_jsonl": transcript_jsonl, "prompt_variant": variant}
+    elif metric_type == "egregiousness":
+        return {"scenario": request.scenario, "outcome": request.outcome}
+    elif metric_type in ("incriminating", "effectiveness", "confidence"):
+        return {"transcript_jsonl": transcript_jsonl, "outcome": request.outcome, "mechanism": request.mechanism}
+    elif metric_type == "realism":
+        return {"transcript_jsonl": transcript_jsonl}
+    else:
+        raise ValueError(f"Unknown metric type: {metric_type!r}")
+
+
 async def _run_single_metric(
     metric_type: str,
     transcript_jsonl: str,
@@ -742,164 +650,29 @@ async def _run_single_metric(
     else:
         est_tokens = len(transcript_jsonl) // 4 + 2000
 
-    if metric_type == "suspiciousness":
-        first = await _throttled_to_thread(
-            _run_single_eval,
-            transcript_jsonl,
-            variant,
-            api_key_id,
-            api_key_id=api_key_id,
-            estimated_input_tokens=est_tokens,
-        )
-        if n_evals > 1:
-            rest = await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_eval,
-                        transcript_jsonl,
-                        variant,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals - 1)
-                ]
-            )
-            results = [first] + list(rest)
-        else:
-            results = [first]
+    eval_kwargs = _build_eval_kwargs(metric_type, transcript_jsonl, request, variant)
+    eval_fn = partial(_run_eval, metric_type, api_key_id, **eval_kwargs)
 
-    elif metric_type == "egregiousness":
-        results = list(
-            await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_egregiousness,
-                        request.scenario,
-                        request.outcome,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals)
-                ]
-            )
+    # First + rest throttling pattern for all metrics
+    first = await _throttled_to_thread(
+        eval_fn,
+        api_key_id=api_key_id,
+        estimated_input_tokens=est_tokens,
+    )
+    if n_evals > 1:
+        rest = await asyncio.gather(
+            *[
+                _throttled_to_thread(
+                    eval_fn,
+                    api_key_id=api_key_id,
+                    estimated_input_tokens=est_tokens,
+                )
+                for _ in range(n_evals - 1)
+            ]
         )
-
-    elif metric_type == "incriminating":
-        first = await _throttled_to_thread(
-            _run_single_incriminating,
-            transcript_jsonl,
-            request.outcome,
-            request.mechanism,
-            api_key_id,
-            api_key_id=api_key_id,
-            estimated_input_tokens=est_tokens,
-        )
-        if n_evals > 1:
-            rest = await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_incriminating,
-                        transcript_jsonl,
-                        request.outcome,
-                        request.mechanism,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals - 1)
-                ]
-            )
-            results = [first] + list(rest)
-        else:
-            results = [first]
-
-    elif metric_type == "effectiveness":
-        first = await _throttled_to_thread(
-            _run_single_effectiveness,
-            transcript_jsonl,
-            request.outcome,
-            request.mechanism,
-            api_key_id,
-            api_key_id=api_key_id,
-            estimated_input_tokens=est_tokens,
-        )
-        if n_evals > 1:
-            rest = await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_effectiveness,
-                        transcript_jsonl,
-                        request.outcome,
-                        request.mechanism,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals - 1)
-                ]
-            )
-            results = [first] + list(rest)
-        else:
-            results = [first]
-
-    elif metric_type == "confidence":
-        first = await _throttled_to_thread(
-            _run_single_confidence,
-            transcript_jsonl,
-            request.outcome,
-            request.mechanism,
-            api_key_id,
-            api_key_id=api_key_id,
-            estimated_input_tokens=est_tokens,
-        )
-        if n_evals > 1:
-            rest = await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_confidence,
-                        transcript_jsonl,
-                        request.outcome,
-                        request.mechanism,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals - 1)
-                ]
-            )
-            results = [first] + list(rest)
-        else:
-            results = [first]
-
-    elif metric_type == "realism":
-        first = await _throttled_to_thread(
-            _run_single_realism,
-            transcript_jsonl,
-            api_key_id,
-            api_key_id=api_key_id,
-            estimated_input_tokens=est_tokens,
-        )
-        if n_evals > 1:
-            rest = await asyncio.gather(
-                *[
-                    _throttled_to_thread(
-                        _run_single_realism,
-                        transcript_jsonl,
-                        api_key_id,
-                        api_key_id=api_key_id,
-                        estimated_input_tokens=est_tokens,
-                    )
-                    for _ in range(n_evals - 1)
-                ]
-            )
-            results = [first] + list(rest)
-        else:
-            results = [first]
-
+        results = [first] + list(rest)
     else:
-        raise ValueError(f"Unknown metric type: {metric_type}")
+        results = [first]
 
     # Aggregate
     valid = [r for r in results if r.get("score", -1) >= 0]
@@ -930,30 +703,17 @@ def _check_cached_scores(request: EvaluateFileRequest) -> dict[str, Any] | None:
         logger.info("Cache miss: no transcript_hash in request")
         return None
 
-    from routers.files import get_transcripts_dir, read_sidecar
-
-    transcripts_dir = get_transcripts_dir()
-    fname = request.file_name if request.file_name.endswith(".jsonl") else request.file_name + ".jsonl"
-    file_path = transcripts_dir / request.project / fname
-
-    meta = read_sidecar(file_path)
-    if not meta:
-        logger.info("Cache miss: no meta.json for %s/%s", request.project, request.file_name)
+    file_path = _resolve_jsonl_path(request.project, request.file_name)
+    cached = sidecar.read_eval_scores(file_path, request.transcript_hash)
+    if not cached:
+        logger.info("Cache miss: no matching scores for %s/%s", request.project, request.file_name)
         return None
 
-    if meta.get("transcript_hash") != request.transcript_hash:
-        logger.info(
-            "Cache miss: hash mismatch for %s/%s — meta=%s request=%s",
-            request.project,
-            request.file_name,
-            meta.get("transcript_hash"),
-            request.transcript_hash,
-        )
-        return None
+    scores = cached["scores"]
+    evals = cached["evals"]
 
-    scores = meta.get("scores", {})
-    evals = meta.get("evals", {})
-    if not scores or "suspiciousness" not in scores:
+    # Check metric completeness (business logic stays here, not in sidecar)
+    if "suspiciousness" not in scores:
         logger.info("Cache miss: no suspiciousness score in meta for %s/%s", request.project, request.file_name)
         return None
 
@@ -981,7 +741,7 @@ def _check_cached_scores(request: EvaluateFileRequest) -> dict[str, Any] | None:
         return None
 
     logger.info("Cache HIT for %s/%s", request.project, request.file_name)
-    return {"scores": scores, "evals": evals}
+    return cached
 
 
 def _reconstruct_metrics_from_cache(cached: dict[str, Any]) -> dict[str, Any]:

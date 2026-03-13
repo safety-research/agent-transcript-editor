@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Message } from './types';
+import Modal from './Modal';
 
 interface Props {
   messages: Message[];
@@ -73,12 +74,7 @@ export function LengthExtensionDialog({ messages, onExtend, onClose }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal length-extension-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Extend Transcript Length</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
+    <Modal title="Extend Transcript Length" onClose={onClose} className="length-extension-modal">
         <div className="modal-body">
           {/* Current token count */}
           <div className="form-group">
@@ -147,7 +143,6 @@ export function LengthExtensionDialog({ messages, onExtend, onClose }: Props) {
             Extend
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

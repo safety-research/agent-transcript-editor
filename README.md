@@ -146,7 +146,7 @@ Backend (FastAPI + AsyncAnthropic)
 | `/move` | POST | Move between projects |
 | `/duplicate` | POST | Copy file + metadata |
 | `/meta` | POST | Write/merge sidecar metadata |
-| `/prompt-files` | GET | List available prompt documents |
+
 
 ### Session (`/api/session`)
 | Endpoint | Method | Description |

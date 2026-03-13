@@ -1,4 +1,3 @@
 {
-  "prompt_variants": ["control_arena", "state_tracking", "off_task", "security_architect", "pathways"],
-  "creative_document": "CREATIVE.md"
+  "prompt_variants": ["control_arena", "state_tracking", "off_task", "security_architect", "pathways"]
 }

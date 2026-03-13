@@ -31,20 +31,24 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 from agent import run_agent
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sessions import _delete_chat, _save_metadata, _save_transcript, session_manager
+from sessions import GlobalSettingsBody, _delete_chat, _save_metadata, _save_transcript, session_manager
 
 
-def _save_transcript_async(*a, **kw):
-    return asyncio.to_thread(_save_transcript, *a, **kw)
+def _to_async(fn):
+    """Wrap a sync function to run in asyncio.to_thread."""
+    def wrapper(*a, **kw):
+        return asyncio.to_thread(fn, *a, **kw)
+    return wrapper
 
 
-def _save_metadata_async(*a, **kw):
-    return asyncio.to_thread(_save_metadata, *a, **kw)
+_save_transcript_async = _to_async(_save_transcript)
+_save_metadata_async = _to_async(_save_metadata)
 
 
 logger = logging.getLogger(__name__)
@@ -56,27 +60,22 @@ KEEPALIVE_INTERVAL = 25  # seconds
 # ── Global settings (MUST be defined before {file_key:path} routes) ────
 
 
-class GlobalSettingsBody(BaseModel):
-    creative_document: str | None = None
-    prompt_mode: str | None = None  # "creative", "faithful", "both"
-    child_lock_enabled: bool | None = None
-    lock_first_message: bool | None = None
-    n_evals: int | None = None
-    n_evals_other: int | None = None
-    prompt_variants: list[str] | None = None
-    eval_egregiousness: bool | None = None
-    eval_incriminating: bool | None = None
-    eval_effectiveness: bool | None = None
-    eval_confidence: bool | None = None
-    eval_realism: bool | None = None
-    monitor_api_key_id: str | None = None
-    goal_score: int | None = None
-    tpm_default: int | None = None
-    tpm_alt: int | None = None
-    llm_model: str | None = None
-    llm_api_key_id: str | None = None
-    auto_eval_enabled: bool | None = None
-    auto_eval_on_load: bool | None = None
+# Side-effect hooks: settings that need extra actions beyond setattr
+def _apply_setting_side_effects(key: str, value: Any) -> None:
+    """Apply side effects for settings that need more than just setattr."""
+    if key == "prompt_mode":
+        from sessions import VALID_PROMPT_MODES
+
+        if value not in VALID_PROMPT_MODES:
+            raise ValueError(f"Invalid prompt_mode: {value}, must be one of {VALID_PROMPT_MODES}")
+    elif key == "tpm_default":
+        from rate_limit import set_limit
+
+        set_limit("default", value)
+    elif key == "tpm_alt":
+        from rate_limit import set_limit
+
+        set_limit("alt", value)
 
 
 @router.get("/global-settings")
@@ -87,55 +86,15 @@ async def get_global_settings():
 
 @router.put("/global-settings")
 async def update_global_settings(body: GlobalSettingsBody):
-    """Update global settings and broadcast to all sessions."""
-    from rate_limit import set_limit
+    """Update global settings and broadcast to all sessions.
 
-    if body.creative_document is not None:
-        session_manager.creative_document = body.creative_document
-    if body.prompt_mode is not None:
-        from sessions import VALID_PROMPT_MODES
-
-        if body.prompt_mode not in VALID_PROMPT_MODES:
-            raise ValueError(f"Invalid prompt_mode: {body.prompt_mode}, must be one of {VALID_PROMPT_MODES}")
-        session_manager.prompt_mode = body.prompt_mode
-    if body.child_lock_enabled is not None:
-        session_manager.child_lock_enabled = body.child_lock_enabled
-    if body.lock_first_message is not None:
-        session_manager.lock_first_message = body.lock_first_message
-    if body.n_evals is not None:
-        session_manager.n_evals = body.n_evals
-    if body.n_evals_other is not None:
-        session_manager.n_evals_other = body.n_evals_other
-    if body.prompt_variants is not None:
-        session_manager.prompt_variants = body.prompt_variants
-    if body.eval_egregiousness is not None:
-        session_manager.eval_egregiousness = body.eval_egregiousness
-    if body.eval_incriminating is not None:
-        session_manager.eval_incriminating = body.eval_incriminating
-    if body.eval_effectiveness is not None:
-        session_manager.eval_effectiveness = body.eval_effectiveness
-    if body.eval_confidence is not None:
-        session_manager.eval_confidence = body.eval_confidence
-    if body.eval_realism is not None:
-        session_manager.eval_realism = body.eval_realism
-    if body.monitor_api_key_id is not None:
-        session_manager.monitor_api_key_id = body.monitor_api_key_id
-    if body.goal_score is not None:
-        session_manager.goal_score = body.goal_score
-    if body.tpm_default is not None:
-        session_manager.tpm_default = body.tpm_default
-        set_limit("default", body.tpm_default)
-    if body.tpm_alt is not None:
-        session_manager.tpm_alt = body.tpm_alt
-        set_limit("alt", body.tpm_alt)
-    if body.llm_model is not None:
-        session_manager.llm_model = body.llm_model
-    if body.llm_api_key_id is not None:
-        session_manager.llm_api_key_id = body.llm_api_key_id
-    if body.auto_eval_enabled is not None:
-        session_manager.auto_eval_enabled = body.auto_eval_enabled
-    if body.auto_eval_on_load is not None:
-        session_manager.auto_eval_on_load = body.auto_eval_on_load
+    Uses exclude_unset=True so only explicitly provided fields are applied
+    (fields with defaults are NOT applied unless the client sent them).
+    """
+    updates = body.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        _apply_setting_side_effects(key, value)
+        setattr(session_manager, key, value)
 
     # Persist to disk and broadcast to ALL sessions
     await asyncio.to_thread(session_manager._save_persisted_settings)
@@ -401,7 +360,6 @@ class SettingsBody(BaseModel):
     model: str | None = None
     api_key_id: str | None = None
     mode: str | None = None
-    creative_document: str | None = None
     prompt_mode: str | None = None  # "creative", "faithful", "both"
     # Legacy: accept global settings here for backwards compatibility
     # (batch_orchestrator sends child_lock_enabled via per-session settings)
@@ -419,8 +377,6 @@ async def update_settings(file_key: str, body: SettingsBody):
         session.api_key_id = body.api_key_id
     if body.mode is not None:
         session.mode = body.mode
-    if body.creative_document is not None:
-        session.creative_document = body.creative_document
     if body.prompt_mode is not None:
         from sessions import VALID_PROMPT_MODES
 

@@ -12,6 +12,7 @@ import { useRef, useCallback, useEffect } from "react";
 import type { StreamingBlock, LLMSession } from "./types";
 import type { FileKey } from "../store";
 import { useStore, monitorEvalFromSidecar } from "../store";
+import { applyGlobalSettingsToStore } from "../api";
 import { pollExistingEval, triggerMonitorEval, buildMonitorUpdates } from "../monitor";
 import { showToast } from "../toast";
 
@@ -493,31 +494,7 @@ export function useAgentSession({ fileKey }: UseAgentSessionOptions) {
 
         case "global_settings_updated": {
           // Global settings changed (from another session or the settings modal)
-          const store = useStore.getState();
-          store.updateSettings({
-            lockFirstMessage: data.lock_first_message as boolean,
-            childLock: data.child_lock_enabled as boolean,
-            promptMode: data.prompt_mode as 'creative' | 'faithful',
-            creativeDocument: (data.creative_document as string) ?? 'CREATIVE.md',
-            llmModel: data.llm_model as string,
-            llmApiKeyId: data.llm_api_key_id as string,
-          });
-          store.updateMonitorSettings({
-            nEvals: data.n_evals as number,
-            nEvalsOtherMetrics: (data.n_evals_other as number) ?? 1,
-            promptVariants: data.prompt_variants as string[],
-            evalEgregiousness: data.eval_egregiousness as boolean,
-            evalIncriminating: data.eval_incriminating as boolean,
-            evalEffectiveness: data.eval_effectiveness as boolean,
-            evalConfidence: data.eval_confidence as boolean,
-            evalRealism: data.eval_realism as boolean,
-            apiKeyId: data.monitor_api_key_id as string,
-            goalScore: data.goal_score as number,
-            enabled: data.auto_eval_enabled as boolean,
-            autoEvalOnLoad: data.auto_eval_on_load as boolean,
-            tpmDefault: data.tpm_default as number,
-            tpmAlt: data.tpm_alt as number,
-          });
+          applyGlobalSettingsToStore(data as Record<string, unknown>);
           break;
         }
 

@@ -35,6 +35,10 @@ function getSearchableText(block: ContentBlockType): string {
       }
       return JSON.stringify(block.input, null, 2);
     }
+    default: {
+      const _exhaustive: never = block;
+      throw new Error(`Unknown content block type: ${(_exhaustive as { type: string }).type}`);
+    }
   }
 }
 

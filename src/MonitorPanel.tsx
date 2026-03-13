@@ -20,33 +20,27 @@ interface Props {
   promptVariants: string[];
 }
 
-function scoreColor(score: number): { color: string; bgColor: string } {
-  if (score >= 70) return { color: 'var(--red-400)', bgColor: 'rgba(244, 63, 94, 0.1)' };
-  if (score >= 40) return { color: 'var(--orange-400)', bgColor: 'rgba(251, 146, 60, 0.1)' };
-  if (score >= 20) return { color: 'var(--amber-400)', bgColor: 'rgba(245, 158, 11, 0.1)' };
-  return { color: 'var(--green-400)', bgColor: 'rgba(16, 185, 129, 0.1)' };
+/** Color bands ordered high→low. Index 0 = highest score band. */
+const SCORE_COLORS = [
+  { class: 'eval-red',    color: 'var(--red-400)',    bg: 'rgba(244, 63, 94, 0.1)' },
+  { class: 'eval-orange', color: 'var(--orange-400)', bg: 'rgba(251, 146, 60, 0.1)' },
+  { class: 'eval-yellow', color: 'var(--amber-400)',  bg: 'rgba(245, 158, 11, 0.1)' },
+  { class: 'eval-green',  color: 'var(--green-400)',  bg: 'rgba(16, 185, 129, 0.1)' },
+];
+
+function scoreBand(score: number, inverted = false) {
+  // Normal: high score → red (index 0). Inverted: high score → green (index 3).
+  const idx = score >= 70 ? 0 : score >= 40 ? 1 : score >= 20 ? 2 : 3;
+  return SCORE_COLORS[inverted ? 3 - idx : idx];
 }
 
-function scoreColorClass(score: number): string {
-  if (score >= 70) return 'eval-red';
-  if (score >= 40) return 'eval-orange';
-  if (score >= 20) return 'eval-yellow';
-  return 'eval-green';
+function scoreColor(score: number, inverted = false): { color: string; bgColor: string } {
+  const b = scoreBand(score, inverted);
+  return { color: b.color, bgColor: b.bg };
 }
 
-/** Inverted color scale: green for high scores, red for low (opposite of suspiciousness) */
-function scoreColorInverted(score: number): { color: string; bgColor: string } {
-  if (score >= 70) return { color: 'var(--green-400)', bgColor: 'rgba(16, 185, 129, 0.1)' };
-  if (score >= 40) return { color: 'var(--amber-400)', bgColor: 'rgba(245, 158, 11, 0.1)' };
-  if (score >= 20) return { color: 'var(--orange-400)', bgColor: 'rgba(251, 146, 60, 0.1)' };
-  return { color: 'var(--red-400)', bgColor: 'rgba(244, 63, 94, 0.1)' };
-}
-
-function scoreColorClassInverted(score: number): string {
-  if (score >= 70) return 'eval-green';
-  if (score >= 40) return 'eval-yellow';
-  if (score >= 20) return 'eval-orange';
-  return 'eval-red';
+function scoreColorClass(score: number, inverted = false): string {
+  return scoreBand(score, inverted).class;
 }
 
 function ScoreCircle({ score, size = 88, label, secondary, inverted }: {
@@ -60,7 +54,7 @@ function ScoreCircle({ score, size = 88, label, secondary, inverted }: {
   const strokeWidth = size >= 72 ? 5 : size <= 48 ? 3 : 4;
   const circumference = 2 * Math.PI * radius;
   const progress = (score / 100) * circumference;
-  const { color, bgColor } = inverted ? scoreColorInverted(score) : scoreColor(score);
+  const { color, bgColor } = scoreColor(score, inverted);
   const fontSize = size >= 72 ? 'var(--text-xl)' : size <= 48 ? '13px' : 'var(--text-base)';
 
   // Count-up animation: animate displayed number from previous value to new score
@@ -128,7 +122,7 @@ function EvalCard({ result, index, type }: {
   const score = result.score as number;
   const isError = score < 0;
   const invertedMetrics: MetricType[] = ['realism', 'confidence'];
-  const colorClass = isError ? 'eval-error' : (invertedMetrics.includes(type) ? scoreColorClassInverted(score) : scoreColorClass(score));
+  const colorClass = isError ? 'eval-error' : scoreColorClass(score, invertedMetrics.includes(type));
   const thinking = result.thinking as string | undefined;
   const [showThinking, setShowThinking] = useState(false);
 

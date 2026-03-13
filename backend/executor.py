@@ -105,7 +105,9 @@ def _format_blocks_as_text(blocks: list[dict[str, Any]]) -> str:
         return "(empty)"
     parts: list[str] = []
     for i, block in enumerate(blocks):
-        block_type = block.get("type", "unknown")
+        if "type" not in block:
+            raise ValueError(f"Content block {i} missing required 'type' field: {safe_stringify(block, 2)}")
+        block_type = block["type"]
         if block_type == "text":
             parts.append(f"[block {i}: text]\n{block['text']}")
         elif block_type == "thinking":
@@ -125,7 +127,7 @@ def _format_blocks_as_text(blocks: list[dict[str, Any]]) -> str:
                 f'[block {i}: tool_use "{name}"]\n' + json.dumps(block.get("input", {}), indent=2, ensure_ascii=False)
             )
         else:
-            parts.append(f"[block {i}: {block_type}]\n{safe_stringify(block, 2)}")
+            raise ValueError(f"Unknown content block type {block_type!r} in block {i}: {safe_stringify(block, 2)}")
     return "\n\n".join(parts)
 
 
