@@ -86,21 +86,26 @@ function App() {
   }, [activeFileKey]);
 
   // On mount: read hash and auto-open that file
+  // Delayed to run after Zustand persist rehydrates from IndexedDB,
+  // so the hash takes priority over the previously-persisted activeFileKey.
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash || hash.length <= 2) return;
-    // hash format: #/projectDirName/fileName.jsonl
-    const path = hash.slice(2); // strip "#/"
-    const slashIndex = path.indexOf('/');
-    if (slashIndex === -1) return;
-    const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
-    const fileName = decodeURIComponent(path.slice(slashIndex + 1));
-    if (!projectDirName || !fileName) return;
+    const timer = setTimeout(() => {
+      const hash = window.location.hash;
+      if (!hash || hash.length <= 2) return;
+      // hash format: #/projectDirName/fileName.jsonl
+      const path = hash.slice(2); // strip "#/"
+      const slashIndex = path.indexOf('/');
+      if (slashIndex === -1) return;
+      const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
+      const fileName = decodeURIComponent(path.slice(slashIndex + 1));
+      if (!projectDirName || !fileName) return;
 
-    // Ensure the project exists in the store, then open the file
-    const store = useStore.getState();
-    store.ensureProject(projectDirName, projectDirName);
-    openFile(projectDirName, fileName, []);
+      // Ensure the project exists in the store, then open the file
+      const store = useStore.getState();
+      store.ensureProject(projectDirName, projectDirName);
+      openFile(projectDirName, fileName, []);
+    }, 500);
+    return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
@@ -309,7 +314,7 @@ function App() {
           lockFirstMessage: gs.lock_first_message as boolean,
           childLock: gs.child_lock_enabled as boolean,
           promptMode: gs.prompt_mode as 'creative' | 'faithful',
-          creativeDocument: (gs.creative_document as string) ?? 'CREATIVE.md',
+
           llmModel: gs.llm_model as string,
           llmApiKeyId: gs.llm_api_key_id as string,
         });
