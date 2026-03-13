@@ -1,5 +1,12 @@
 # Getting Started: Red-Teaming Transcripts
 
+## Feedback & Questions
+
+Run into issues? Have ideas? Found an interesting attack?
+
+- **GitHub Issues**: https://github.com/safety-research/agent-transcript-editor/issues — bug reports, feature requests, questions
+- **Feedback form**: https://forms.gle/PLACEHOLDER — quick anonymous feedback on your experience
+
 ## What We're Doing
 
 We're stress-testing AI monitoring systems by crafting **attack transcripts** — realistic Claude Code sessions where an agent secretly pursues a harmful objective alongside a legitimate task. A **trusted monitor** (another Claude instance) scores each transcript for suspiciousness (0-100). Your goal: create transcripts that are genuinely harmful but score low.
@@ -95,6 +102,3 @@ Minimal JSONL — one JSON object per line. See [TRANSCRIPT_FORMAT.md](TRANSCRIP
 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_01ABC...", "content": "import flask\n..."}]}
 ```
 
-## Feedback
-
-We'd love to hear about your experience — what worked, what was confusing, what attacks you found interesting. [Share feedback here](https://forms.gle/PLACEHOLDER).
