@@ -43,3 +43,4 @@ batch_orchestrator.py
 transcripts/
 backups/
 
+.claude/
