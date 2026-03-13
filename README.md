@@ -52,7 +52,7 @@ Open http://localhost:5173 in your browser.
 - Natural language instructions to modify transcripts
 - Agent reads transcript structure and makes targeted edits
 - Fork transcripts into variants to try different approaches in parallel
-- Configurable system prompts (SOUL.md, EXECUTOR.md, or custom)
+- Configurable system prompts (CREATIVE.md, FAITHFUL.md, or custom)
 
 ### Trusted Monitor Integration
 - Score transcripts for suspiciousness (0-100) across multiple prompt variants
@@ -85,8 +85,8 @@ CORS_ORIGINS=http://localhost:5173   # Comma-separated allowed origins
 
 Access via the gear icon. Configurable at runtime:
 - **Model selection**: Choose model and API key per session
-- **Prompt mode**: Soul (strategic guidance), Executor (faithful execution), or both
-- **Soul document**: Select which .md file to use as agent system prompt
+- **Prompt mode**: Creative (strategic guidance), Faithful (faithful execution), or both
+- **Creative document**: Select which .md file to use as agent system prompt
 - **Monitor settings**: Number of evaluations, prompt variants, enabled metrics
 - **Rate limits**: Per-key TPM limits
 - **Child lock**: Prevent edits after monitor scoring

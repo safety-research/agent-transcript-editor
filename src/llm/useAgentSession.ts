@@ -497,8 +497,8 @@ export function useAgentSession({ fileKey }: UseAgentSessionOptions) {
           store.updateSettings({
             lockFirstMessage: data.lock_first_message as boolean,
             childLock: data.child_lock_enabled as boolean,
-            promptMode: data.prompt_mode as 'soul' | 'executor',
-            soulDocument: (data.soul_document as string) ?? 'SOUL.md',
+            promptMode: data.prompt_mode as 'creative' | 'faithful',
+            creativeDocument: (data.creative_document as string) ?? 'CREATIVE.md',
             llmModel: data.llm_model as string,
             llmApiKeyId: data.llm_api_key_id as string,
           });

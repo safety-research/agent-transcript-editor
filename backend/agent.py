@@ -3,7 +3,7 @@ Server-side agent loop.
 
 Runs the agent conversation loop:
 1. Add user message to chat_history
-2. Build system prompt (SOUL.md + context)
+2. Build system prompt (CREATIVE.md + context)
 3. Loop: call Anthropic streaming API → execute tools → broadcast events
 4. Stop when no tool calls or finish_editing called
 """
@@ -89,21 +89,21 @@ def _load_preamble(session: Session, session_manager: SessionManager) -> str:
     """Load the preamble document(s) based on prompt_mode.
 
     prompt_mode controls which documents are prepended to the system prompt:
-    - "soul": SOUL.md only (default)
-    - "executor": EXECUTOR.md only
-    - "both": SOUL.md + EXECUTOR.md
+    - "creative": CREATIVE.md only (default)
+    - "faithful": FAITHFUL.md only
+    - "both": CREATIVE.md + FAITHFUL.md
     """
     mode = session.prompt_mode or session_manager.prompt_mode
-    soul_filename = session.soul_document or session_manager.soul_document
+    creative_filename = session.creative_document or session_manager.creative_document
 
-    if mode == "executor":
-        return _load_document("EXECUTOR.md")
+    if mode == "faithful":
+        return _load_document("FAITHFUL.md")
     elif mode == "both":
-        soul = _load_document(soul_filename)
-        executor = _load_document("EXECUTOR.md")
-        return f"{soul}\n\n---\n\n{executor}"
-    else:  # "soul" (default)
-        return _load_document(soul_filename)
+        creative = _load_document(creative_filename)
+        faithful = _load_document("FAITHFUL.md")
+        return f"{creative}\n\n---\n\n{faithful}"
+    else:  # "creative" (default)
+        return _load_document(creative_filename)
 
 
 SYSTEM_PROMPT = """You are a transcript editor assistant for Claude Code conversation transcripts in minimal JSONL format.
@@ -293,7 +293,7 @@ async def _meta_fork(
     # Inherit per-session settings from parent
     fork_session.model = session.model
     fork_session.api_key_id = session.api_key_id
-    fork_session.soul_document = session.soul_document
+    fork_session.creative_document = session.creative_document
     fork_session.prompt_mode = session.prompt_mode
 
     # Broadcast fork event so UI can open the tab

@@ -299,8 +299,8 @@ export interface MonitorSettings {
 export interface WorkspaceSettings {
   lockFirstMessage: boolean;
   childLock: boolean;
-  promptMode: 'soul' | 'executor';
-  soulDocument: string;
+  promptMode: 'creative' | 'faithful';
+  creativeDocument: string;
   llmModel: string;
   llmApiKeyId: string;  // 'default' | 'alt'
   monitor: MonitorSettings;
@@ -399,8 +399,8 @@ export const useStore = create<WorkspaceState>()(
       settings: {
         lockFirstMessage: false,
         childLock: false,
-        promptMode: 'soul',
-        soulDocument: 'SOUL.md',
+        promptMode: 'creative',
+        creativeDocument: 'CREATIVE.md',
         llmModel: 'claude-opus-4-6',
         llmApiKeyId: 'default',
         monitor: {
@@ -1246,7 +1246,7 @@ export const useStore = create<WorkspaceState>()(
           // ── v18: Add promptMode to settings ──
           const s = state as { settings?: Record<string, unknown> };
           if (s.settings) {
-            if (s.settings.promptMode === undefined) s.settings.promptMode = 'soul';
+            if (s.settings.promptMode === undefined) s.settings.promptMode = 'creative';
           }
         }
         if (version <= 18) {

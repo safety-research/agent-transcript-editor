@@ -18,7 +18,7 @@ export function SettingsModal({ onClose }: Props) {
   const lockFirstMessage = useStore(s => s.settings.lockFirstMessage);
   const childLock = useStore(s => s.settings.childLock);
   const promptMode = useStore(s => s.settings.promptMode);
-  const soulDocument = useStore(s => s.settings.soulDocument);
+  const creativeDocument = useStore(s => s.settings.creativeDocument);
   const monitorSettings = useStore(s => s.settings.monitor);
   const [promptFiles, setPromptFiles] = useState<string[]>([]);
   const [promptVariants, setPromptVariants] = useState<PromptVariant[]>([]);
@@ -106,24 +106,24 @@ export function SettingsModal({ onClose }: Props) {
             <div className="form-row">
               <label className="form-row-label">Prompt mode</label>
               <select
-                value={promptMode ?? 'soul'}
+                value={promptMode ?? 'creative'}
                 onChange={e => putGlobalSettings({ prompt_mode: e.target.value })}
                 className="form-input-sm"
               >
-                <option value="soul">Soul</option>
-                <option value="executor">Executor</option>
+                <option value="creative">Creative</option>
+                <option value="faithful">Faithful</option>
               </select>
             </div>
             <span className="help-text" style={{ marginTop: '-0.5rem', display: 'block' }}>
-              Soul: strategic attack guidance (SOUL.md). Executor: faithful instruction execution (EXECUTOR.md).
+              Creative: strategic attack guidance (CREATIVE.md). Faithful: faithful instruction execution (FAITHFUL.md).
             </span>
 
             {promptFiles.length > 0 && (
               <div className="form-row">
-                <label className="form-row-label">Soul document</label>
+                <label className="form-row-label">Creative document</label>
                 <select
-                  value={soulDocument ?? 'SOUL.md'}
-                  onChange={e => putGlobalSettings({ soul_document: e.target.value })}
+                  value={creativeDocument ?? 'CREATIVE.md'}
+                  onChange={e => putGlobalSettings({ creative_document: e.target.value })}
                   className="form-input-sm"
                 >
                   {promptFiles.map(f => (

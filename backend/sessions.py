@@ -29,8 +29,8 @@ if _SETTINGS_PATH.exists():
 
 DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "claude-opus-4-6")
 DEFAULT_PROMPT_VARIANTS: list[str] = _SHARED_SETTINGS.get("prompt_variants", ["control_arena"])
-DEFAULT_SOUL_DOCUMENT: str = _SHARED_SETTINGS.get("soul_document", "SOUL.md")
-VALID_PROMPT_MODES = {"soul", "executor", "both"}
+DEFAULT_CREATIVE_DOCUMENT: str = _SHARED_SETTINGS.get("creative_document", "CREATIVE.md")
+VALID_PROMPT_MODES = {"creative", "faithful", "both"}
 
 
 def _to_base36(n: int) -> str:
@@ -90,8 +90,8 @@ class Session:
     # Per-session settings
     model: str = field(default_factory=lambda: DEFAULT_MODEL)
     api_key_id: str = "default"
-    soul_document: str | None = None  # Per-session override; None = use global
-    prompt_mode: str | None = None  # Per-session override; None = use global ("soul", "executor", "both")
+    creative_document: str | None = None  # Per-session override; None = use global
+    prompt_mode: str | None = None  # Per-session override; None = use global ("creative", "faithful", "both")
 
     # Connected subscribers: subscriber_id → asyncio.Queue
     subscribers: dict[str, asyncio.Queue] = field(default_factory=dict)
@@ -340,8 +340,8 @@ class SessionManager:
         self.transcripts_dir = transcripts_dir or TRANSCRIPTS_DIR
 
         # Global settings (shared across all sessions)
-        self.soul_document: str = DEFAULT_SOUL_DOCUMENT
-        self.prompt_mode: str = "soul"  # "soul", "executor", "both"
+        self.creative_document: str = DEFAULT_CREATIVE_DOCUMENT
+        self.prompt_mode: str = "creative"  # "creative", "faithful", "both"
         self.child_lock_enabled: bool = False
         self.lock_first_message: bool = False
         self.n_evals: int = 5
@@ -641,7 +641,7 @@ class SessionManager:
     def get_global_settings(self) -> dict[str, Any]:
         """Return all global settings as a dict."""
         return {
-            "soul_document": self.soul_document,
+            "creative_document": self.creative_document,
             "prompt_mode": self.prompt_mode,
             "child_lock_enabled": self.child_lock_enabled,
             "lock_first_message": self.lock_first_message,

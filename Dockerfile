@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend
 COPY backend/ backend/
-COPY SOUL.md EXECUTOR.md ./
+COPY CREATIVE.md FAITHFUL.md ./
 
 # Copy built frontend
 COPY --from=frontend-build /app/dist/ dist/

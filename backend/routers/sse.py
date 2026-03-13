@@ -57,8 +57,8 @@ KEEPALIVE_INTERVAL = 25  # seconds
 
 
 class GlobalSettingsBody(BaseModel):
-    soul_document: str | None = None
-    prompt_mode: str | None = None  # "soul", "executor", "both"
+    creative_document: str | None = None
+    prompt_mode: str | None = None  # "creative", "faithful", "both"
     child_lock_enabled: bool | None = None
     lock_first_message: bool | None = None
     n_evals: int | None = None
@@ -90,8 +90,8 @@ async def update_global_settings(body: GlobalSettingsBody):
     """Update global settings and broadcast to all sessions."""
     from rate_limit import set_limit
 
-    if body.soul_document is not None:
-        session_manager.soul_document = body.soul_document
+    if body.creative_document is not None:
+        session_manager.creative_document = body.creative_document
     if body.prompt_mode is not None:
         from sessions import VALID_PROMPT_MODES
 
@@ -401,8 +401,8 @@ class SettingsBody(BaseModel):
     model: str | None = None
     api_key_id: str | None = None
     mode: str | None = None
-    soul_document: str | None = None
-    prompt_mode: str | None = None  # "soul", "executor", "both"
+    creative_document: str | None = None
+    prompt_mode: str | None = None  # "creative", "faithful", "both"
     # Legacy: accept global settings here for backwards compatibility
     # (batch_orchestrator sends child_lock_enabled via per-session settings)
     child_lock_enabled: bool | None = None
@@ -419,8 +419,8 @@ async def update_settings(file_key: str, body: SettingsBody):
         session.api_key_id = body.api_key_id
     if body.mode is not None:
         session.mode = body.mode
-    if body.soul_document is not None:
-        session.soul_document = body.soul_document
+    if body.creative_document is not None:
+        session.creative_document = body.creative_document
     if body.prompt_mode is not None:
         from sessions import VALID_PROMPT_MODES
 

@@ -48,7 +48,7 @@ const SETTINGS_KEY_MAP: Record<string, { target: 'settings' | 'monitor'; key: st
   lock_first_message: { target: 'settings', key: 'lockFirstMessage' },
   child_lock_enabled: { target: 'settings', key: 'childLock' },
   prompt_mode: { target: 'settings', key: 'promptMode' },
-  soul_document: { target: 'settings', key: 'soulDocument' },
+  creative_document: { target: 'settings', key: 'creativeDocument' },
   llm_model: { target: 'settings', key: 'llmModel' },
   llm_api_key_id: { target: 'settings', key: 'llmApiKeyId' },
   n_evals: { target: 'monitor', key: 'nEvals' },
