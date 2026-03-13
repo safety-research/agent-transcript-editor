@@ -78,14 +78,18 @@ function App() {
   const triggerSidebarRefresh = useStore(s => s.triggerSidebarRefresh);
 
   // ── Hash-based deep linking ─────────────────────────────────────────
-  // Sync activeFileKey → hash
+  // Track whether the initial hash has been applied yet.
+  // Until it has, don't let activeFileKey overwrite the URL hash.
+  const hashAppliedRef = useRef(false);
+
+  // Sync activeFileKey → hash (but only after initial hash has been processed)
   useEffect(() => {
-    if (activeFileKey) {
+    if (activeFileKey && hashAppliedRef.current) {
       window.location.hash = `#/${activeFileKey}`;
     }
   }, [activeFileKey]);
 
-  // Hash-based deep linking: open the file specified in the URL hash.
+  // Open the file specified in the URL hash.
   useEffect(() => {
     const openFromHash = () => {
       const hash = window.location.hash;
@@ -99,27 +103,25 @@ function App() {
 
       const store = useStore.getState();
       const fileKey = `${projectDirName}/${fileName}`;
-      if (store.activeFileKey === fileKey) return;
+      if (store.activeFileKey === fileKey) {
+        hashAppliedRef.current = true;
+        return;
+      }
       store.ensureProject(projectDirName, projectDirName);
       openFile(projectDirName, fileName, []);
+      hashAppliedRef.current = true;
     };
 
     // On mount: wait for Zustand persist to finish rehydrating from IndexedDB,
     // then override activeFileKey with the URL hash.
-    if (useStore.persist.getOptions().skipHydration) {
-      // If hydration is manual, just open immediately
+    const unsub = useStore.persist.onFinishHydration(() => {
       openFromHash();
-    } else {
-      // Subscribe to hydration completion
-      const unsub = useStore.persist.onFinishHydration(() => {
-        openFromHash();
-        unsub();
-      });
-      // If already hydrated (e.g. synchronous storage), run now
-      if (useStore.persist.hasHydrated()) {
-        openFromHash();
-        unsub();
-      }
+      unsub();
+    });
+    // If already hydrated (e.g. synchronous storage), run now
+    if (useStore.persist.hasHydrated()) {
+      openFromHash();
+      unsub();
     }
 
     // On subsequent hash changes in the same tab
