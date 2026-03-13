@@ -85,28 +85,8 @@ function App() {
     }
   }, [activeFileKey]);
 
-  // On mount: read hash and auto-open that file
-  // Delayed to run after Zustand persist rehydrates from IndexedDB,
-  // so the hash takes priority over the previously-persisted activeFileKey.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const hash = window.location.hash;
-      if (!hash || hash.length <= 2) return;
-      // hash format: #/projectDirName/fileName.jsonl
-      const path = hash.slice(2); // strip "#/"
-      const slashIndex = path.indexOf('/');
-      if (slashIndex === -1) return;
-      const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
-      const fileName = decodeURIComponent(path.slice(slashIndex + 1));
-      if (!projectDirName || !fileName) return;
-
-      // Ensure the project exists in the store, then open the file
-      const store = useStore.getState();
-      store.ensureProject(projectDirName, projectDirName);
-      openFile(projectDirName, fileName, []);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Hash-based deep linking is handled in store.ts onRehydrateStorage
+  // to guarantee it runs after Zustand persist restores state from IndexedDB.
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
   const showIncriminating = useStore(s => s.settings.monitor.evalIncriminating);

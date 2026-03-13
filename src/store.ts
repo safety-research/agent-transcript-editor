@@ -26,36 +26,24 @@ export function parseFileKey(fileKey: FileKey): { projectDirName: string; fileNa
 
 // ── Data Model ──────────────────────────────────────────────────────────
 
-export interface EgregiousnessEval {
-  score: number | null;           // score_with_reasoning mean
-  scoreNumberOnly: number | null;
+/** Generic metric evaluation result (used for incriminating, confidence, effectiveness, realism). */
+export interface MetricEval {
+  score: number | null;
   reasoning: string | null;
+  results: Array<{ score: number; reasoning: string; thinking?: string }>;
+}
+
+/** Egregiousness has an extra scoreNumberOnly field. */
+export interface EgregiousnessEval extends MetricEval {
+  scoreNumberOnly: number | null;
   results: Array<{ score: number; scoreNumberOnly: number; reasoning: string; thinking?: string }>;
 }
 
-export interface IncriminatingEval {
-  score: number | null;
-  reasoning: string | null;
-  results: Array<{ score: number; reasoning: string; thinking?: string }>;
-}
-
-export interface ConfidenceEval {
-  score: number | null;
-  reasoning: string | null;
-  results: Array<{ score: number; reasoning: string; thinking?: string }>;
-}
-
-export interface EffectivenessEval {
-  score: number | null;
-  reasoning: string | null;
-  results: Array<{ score: number; reasoning: string; thinking?: string }>;
-}
-
-export interface RealismEval {
-  score: number | null;
-  reasoning: string | null;
-  results: Array<{ score: number; reasoning: string; thinking?: string }>;
-}
+// Type aliases for backward compatibility and semantic clarity
+export type IncriminatingEval = MetricEval;
+export type ConfidenceEval = MetricEval;
+export type EffectivenessEval = MetricEval;
+export type RealismEval = MetricEval;
 
 export interface VariantEval {
   variant: string;
@@ -305,7 +293,7 @@ export interface WorkspaceSettings {
   lockFirstMessage: boolean;
   childLock: boolean;
   promptMode: 'creative' | 'faithful';
-  creativeDocument: string;
+
   llmModel: string;
   llmApiKeyId: string;  // 'default' | 'alt'
   monitor: MonitorSettings;
@@ -405,7 +393,7 @@ export const useStore = create<WorkspaceState>()(
         lockFirstMessage: false,
         childLock: false,
         promptMode: 'creative',
-        creativeDocument: 'CREATIVE.md',
+
         llmModel: 'claude-opus-4-6',
         llmApiKeyId: 'default',
         monitor: {
@@ -1285,6 +1273,63 @@ export const useStore = create<WorkspaceState>()(
       // On hydration, fix monitor eval state consistency + migrate old data to sidecar
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+
+        // Hash-based deep linking: override persisted activeFileKey with URL hash
+        if (typeof window !== 'undefined') {
+          const hash = window.location.hash;
+          if (hash && hash.length > 2) {
+            const path = hash.slice(2); // strip "#/"
+            const slashIndex = path.indexOf('/');
+            if (slashIndex !== -1) {
+              const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
+              const fileName = decodeURIComponent(path.slice(slashIndex + 1));
+              if (projectDirName && fileName) {
+                const fileKey = `${projectDirName}/${fileName}`;
+                state.activeFileKey = fileKey;
+                if (!state.openFiles.includes(fileKey)) {
+                  state.openFiles.push(fileKey);
+                }
+                if (!state.files[fileKey]) {
+                  state.files[fileKey] = {
+                    fileKey,
+                    label: fileName.replace(/\.jsonl$/, ''),
+                    fileName,
+                    messages: [],
+                    transcriptHash: '',
+                    hydrated: false,
+                    loading: false,
+                    mode: 'edit',
+                    pendingPrompt: null,
+                    outcome: null,
+                    scenario: null,
+                    mechanism: null,
+                    summary: null,
+                    settings: {},
+                    consistencySuppressions: [],
+                    llmSession: { contentBlocks: [], hitLimit: false, isStreaming: false },
+                    monitorEval: {
+                      evalId: null, status: 'idle', score: null, reasoning: null,
+                      results: [], variantEvals: [], egregiousness: null,
+                      incriminating: null, effectiveness: null, confidence: null,
+                      realism: null, transcriptHash: null, errorMessage: null,
+                    },
+                  };
+                }
+                // Ensure the project exists
+                if (!state.projects.some((p: { dirName: string }) => p.dirName === projectDirName)) {
+                  state.projects.push({
+                    id: projectDirName,
+                    label: projectDirName,
+                    dirName: projectDirName,
+                  });
+                }
+                state.activeProjectId = state.projects.find(
+                  (p: { dirName: string }) => p.dirName === projectDirName
+                )?.id ?? state.activeProjectId;
+              }
+            }
+          }
+        }
 
         // Ensure promptVariants exists (migration may not have run if async hydration)
         const mon = state.settings.monitor as unknown as Record<string, unknown>;
