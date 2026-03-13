@@ -85,10 +85,10 @@ function App() {
     }
   }, [activeFileKey]);
 
-  // Hash-based deep linking: initial load handled in store.ts onRehydrateStorage.
-  // This listener handles subsequent hash changes (e.g. pasting a new URL in the same tab).
+  // Hash-based deep linking: open the file specified in the URL hash.
+  // Runs on mount (after a tick to let Zustand rehydrate) and on hash changes.
   useEffect(() => {
-    const handleHashChange = () => {
+    const openFromHash = () => {
       const hash = window.location.hash;
       if (!hash || hash.length <= 2) return;
       const path = hash.slice(2);
@@ -99,11 +99,20 @@ function App() {
       if (!projectDirName || !fileName) return;
 
       const store = useStore.getState();
+      const fileKey = `${projectDirName}/${fileName}`;
+      // Skip if already on the right file
+      if (store.activeFileKey === fileKey) return;
       store.ensureProject(projectDirName, projectDirName);
       openFile(projectDirName, fileName, []);
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    // On mount: wait for Zustand persist rehydration, then apply hash
+    const timer = setTimeout(openFromHash, 100);
+    // On hash change: apply immediately
+    window.addEventListener('hashchange', openFromHash);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('hashchange', openFromHash);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
