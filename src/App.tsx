@@ -86,7 +86,6 @@ function App() {
   }, [activeFileKey]);
 
   // Hash-based deep linking: open the file specified in the URL hash.
-  // Runs on mount (after a tick to let Zustand rehydrate) and on hash changes.
   useEffect(() => {
     const openFromHash = () => {
       const hash = window.location.hash;
@@ -100,19 +99,32 @@ function App() {
 
       const store = useStore.getState();
       const fileKey = `${projectDirName}/${fileName}`;
-      // Skip if already on the right file
       if (store.activeFileKey === fileKey) return;
       store.ensureProject(projectDirName, projectDirName);
       openFile(projectDirName, fileName, []);
     };
-    // On mount: wait for Zustand persist rehydration, then apply hash
-    const timer = setTimeout(openFromHash, 100);
-    // On hash change: apply immediately
+
+    // On mount: wait for Zustand persist to finish rehydrating from IndexedDB,
+    // then override activeFileKey with the URL hash.
+    if (useStore.persist.getOptions().skipHydration) {
+      // If hydration is manual, just open immediately
+      openFromHash();
+    } else {
+      // Subscribe to hydration completion
+      const unsub = useStore.persist.onFinishHydration(() => {
+        openFromHash();
+        unsub();
+      });
+      // If already hydrated (e.g. synchronous storage), run now
+      if (useStore.persist.hasHydrated()) {
+        openFromHash();
+        unsub();
+      }
+    }
+
+    // On subsequent hash changes in the same tab
     window.addEventListener('hashchange', openFromHash);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('hashchange', openFromHash);
-    };
+    return () => window.removeEventListener('hashchange', openFromHash);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
