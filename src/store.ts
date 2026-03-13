@@ -197,7 +197,12 @@ export interface Project {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function generateId(): string {
-  return crypto.randomUUID();
+  if (crypto.randomUUID) return crypto.randomUUID();
+  // Fallback for non-secure contexts (plain HTTP)
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> (c === "x" ? 0 : 2);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 function defaultLLMSession(): LLMSession {
