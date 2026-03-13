@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./transcripts:/app/transcripts
+      - ./SOUL.md:/app/SOUL.md
+      - ./EXECUTOR.md:/app/EXECUTOR.md
+    env_file:
+      - backend/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - TRANSCRIPTS_DIR=/app/transcripts
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:4173,http://localhost:3000
+
+  frontend:
+    image: node:22-slim
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      - VITE_API_URL=http://backend:8000
+    command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  node_modules:

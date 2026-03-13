@@ -1,0 +1,123 @@
+/*
+ * Transcript Editor — Obsidian Observatory Theme
+ * A deep, luminous dark theme with frosted panels and precise geometric layering.
+ */
+
+/* Typography — DM Sans for UI character, IBM Plex Mono for technical precision */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Typography */
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Font sizes */
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+
+  /* Font weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Base colors — deep obsidian palette with warm undertones */
+  --gray-50: #f7f7f8;
+  --gray-100: #ececef;
+  --gray-200: #d5d5db;
+  --gray-300: #b4b4be;
+  --gray-400: #8e8e9d;
+  --gray-500: #6b6b7b;
+  --gray-600: #4e4e5c;
+  --gray-700: #363643;
+  --gray-800: #24242e;
+  --gray-850: #1c1c25;
+  --gray-900: #141419;
+  --gray-950: #0a0a0e;
+
+  /* Semantic colors — layered depth */
+  --bg-primary: #0c0c10;
+  --bg-secondary: #131318;
+  --bg-tertiary: #1a1a22;
+  --bg-elevated: #222230;
+  --bg-hover: #282836;
+
+  --text-primary: #eaeaef;
+  --text-secondary: #9494a8;
+  --text-tertiary: #66667a;
+  --text-muted: #46465a;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Accent colors — richer, more saturated */
+  --green-400: #34d399;
+  --green-500: #10b981;
+  --green-600: #059669;
+
+  --purple-400: #a78bfa;
+  --purple-500: #8b5cf6;
+  --purple-600: #7c3aed;
+
+  --blue-400: #38bdf8;
+  --blue-500: #0ea5e9;
+  --blue-600: #0284c7;
+
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+
+  --orange-400: #fb923c;
+
+  --red-400: #fb7185;
+  --red-500: #f43f5e;
+
+  --cyan-400: #22d3ee;
+  --cyan-500: #06b6d4;
+
+  /* Role colors */
+  --color-user: var(--green-500);
+  --color-user-light: var(--green-400);
+  --color-assistant: var(--purple-500);
+  --color-assistant-light: var(--purple-400);
+  --color-tool: var(--cyan-500);
+  --color-thinking: var(--amber-500);
+  --color-error: var(--red-500);
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* Shadows — deeper, more layered */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-glow-green: 0 0 24px rgba(16, 185, 129, 0.12), 0 0 8px rgba(16, 185, 129, 0.06);
+  --shadow-glow-purple: 0 0 24px rgba(139, 92, 246, 0.12), 0 0 8px rgba(139, 92, 246, 0.06);
+  --shadow-glow-cyan: 0 0 24px rgba(6, 182, 212, 0.12), 0 0 8px rgba(6, 182, 212, 0.06);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Glass effects */
+  --glass-bg: rgba(19, 19, 24, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-blur: 16px;
+}

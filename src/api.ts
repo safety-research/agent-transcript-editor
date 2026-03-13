@@ -1,0 +1,98 @@
+/**
+ * Thin API helpers for frontend → backend mutation endpoints.
+ *
+ * The backend is the sole source of truth for persisted state.
+ * These fire-and-forget POSTs; the UI updates reactively via SSE.
+ */
+
+import type { Message } from './types';
+import type { MechanismDict } from './mechanismUtils';
+import { useStore } from './store';
+
+const API = '/api/session';
+
+function encodeFileKey(fk: string): string {
+  return fk.split('/').map(encodeURIComponent).join('/');
+}
+
+export async function saveMessages(fileKey: string, messages: Message[], messageOp?: { type: string; [key: string]: unknown }): Promise<{ transcript_hash: string; ids_fixed: number }> {
+  const res = await fetch(`${API}/${encodeFileKey(fileKey)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, ...(messageOp ? { message_op: messageOp } : {}) }),
+  });
+  if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+  return res.json();
+}
+
+export interface MetadataUpdate {
+  outcome?: string | null;
+  scenario?: string | null;
+  mechanism?: MechanismDict | null;
+  summary?: MechanismDict | null;
+}
+
+export async function saveMetadata(fileKey: string, metadata: MetadataUpdate): Promise<{ transcript_hash: string }> {
+  const res = await fetch(`${API}/${encodeFileKey(fileKey)}/metadata`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(metadata),
+  });
+  if (!res.ok) throw new Error(`Meta save failed: ${res.status}`);
+  return res.json();
+}
+
+// Maps backend setting keys → store update calls.
+// Keeps the mapping in one place so putGlobalSettings can optimistically update the store.
+const SETTINGS_KEY_MAP: Record<string, { target: 'settings' | 'monitor'; key: string }> = {
+  lock_first_message: { target: 'settings', key: 'lockFirstMessage' },
+  child_lock_enabled: { target: 'settings', key: 'childLock' },
+  prompt_mode: { target: 'settings', key: 'promptMode' },
+  soul_document: { target: 'settings', key: 'soulDocument' },
+  llm_model: { target: 'settings', key: 'llmModel' },
+  llm_api_key_id: { target: 'settings', key: 'llmApiKeyId' },
+  n_evals: { target: 'monitor', key: 'nEvals' },
+  n_evals_other: { target: 'monitor', key: 'nEvalsOtherMetrics' },
+  prompt_variants: { target: 'monitor', key: 'promptVariants' },
+  eval_egregiousness: { target: 'monitor', key: 'evalEgregiousness' },
+  eval_incriminating: { target: 'monitor', key: 'evalIncriminating' },
+  eval_effectiveness: { target: 'monitor', key: 'evalEffectiveness' },
+  eval_confidence: { target: 'monitor', key: 'evalConfidence' },
+  eval_realism: { target: 'monitor', key: 'evalRealism' },
+  monitor_api_key_id: { target: 'monitor', key: 'apiKeyId' },
+  goal_score: { target: 'monitor', key: 'goalScore' },
+  auto_eval_enabled: { target: 'monitor', key: 'enabled' },
+  auto_eval_on_load: { target: 'monitor', key: 'autoEvalOnLoad' },
+  tpm_default: { target: 'monitor', key: 'tpmDefault' },
+  tpm_alt: { target: 'monitor', key: 'tpmAlt' },
+};
+
+/**
+ * PUT a partial global settings update to the backend.
+ * Optimistically updates the store immediately, then sends to backend.
+ * Backend persists to disk and broadcasts via SSE (which is a no-op since store already has the value).
+ * This is the ONLY way settings should be changed from the frontend.
+ */
+export function putGlobalSettings(update: Record<string, unknown>): void {
+  // Optimistic store update so UI reflects change immediately
+  const store = useStore.getState();
+  const settingsUpdate: Record<string, unknown> = {};
+  const monitorUpdate: Record<string, unknown> = {};
+  for (const [backendKey, value] of Object.entries(update)) {
+    const mapping = SETTINGS_KEY_MAP[backendKey];
+    if (!mapping) continue;
+    if (mapping.target === 'settings') {
+      settingsUpdate[mapping.key] = value;
+    } else {
+      monitorUpdate[mapping.key] = value;
+    }
+  }
+  if (Object.keys(settingsUpdate).length > 0) store.updateSettings(settingsUpdate);
+  if (Object.keys(monitorUpdate).length > 0) store.updateMonitorSettings(monitorUpdate);
+
+  fetch(`${API}/global-settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  }).catch(() => {});
+}

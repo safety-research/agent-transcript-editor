@@ -1,0 +1,14 @@
+node_modules
+dist
+backend/venv
+backend/__pycache__
+backend/.env
+backend/transcripts
+transcripts
+*.log
+.git
+.claude
+.vite
+overnight-*.json
+score_matrix.py
+vents.log
