@@ -85,8 +85,26 @@ function App() {
     }
   }, [activeFileKey]);
 
-  // Hash-based deep linking is handled in store.ts onRehydrateStorage
-  // to guarantee it runs after Zustand persist restores state from IndexedDB.
+  // Hash-based deep linking: initial load handled in store.ts onRehydrateStorage.
+  // This listener handles subsequent hash changes (e.g. pasting a new URL in the same tab).
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (!hash || hash.length <= 2) return;
+      const path = hash.slice(2);
+      const slashIndex = path.indexOf('/');
+      if (slashIndex === -1) return;
+      const projectDirName = decodeURIComponent(path.slice(0, slashIndex));
+      const fileName = decodeURIComponent(path.slice(slashIndex + 1));
+      if (!projectDirName || !fileName) return;
+
+      const store = useStore.getState();
+      store.ensureProject(projectDirName, projectDirName);
+      openFile(projectDirName, fileName, []);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goalScore = useStore(s => s.settings.monitor.goalScore);
   const showEgregiousness = useStore(s => s.settings.monitor.evalEgregiousness);
   const showIncriminating = useStore(s => s.settings.monitor.evalIncriminating);
