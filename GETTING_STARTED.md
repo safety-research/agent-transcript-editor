@@ -5,7 +5,7 @@
 Run into issues? Have ideas? Found an interesting attack?
 
 - **GitHub Issues**: https://github.com/safety-research/agent-transcript-editor/issues — bug reports, feature requests, questions
-- **Feedback form**: https://docs.google.com/forms/d/100qoVmvDegRcnWy3GHIi7BDnIbSZUd5ZIs7V12ppYbM/viewform — quick feedback on your experience
+- **Feedback form**: https://docs.google.com/forms/d/1IJsCevIeWm_hcWDvVt-GiRVytH1rijgDlm9dcs6Mn0o/viewform — quick feedback on your experience
 
 ## What We're Doing
 
