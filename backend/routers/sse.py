@@ -40,17 +40,6 @@ from pydantic import BaseModel
 from sessions import GlobalSettingsBody, _delete_chat, _save_metadata, _save_transcript, session_manager
 
 
-def _to_async(fn):
-    """Wrap a sync function to run in asyncio.to_thread."""
-    def wrapper(*a, **kw):
-        return asyncio.to_thread(fn, *a, **kw)
-    return wrapper
-
-
-_save_transcript_async = _to_async(_save_transcript)
-_save_metadata_async = _to_async(_save_metadata)
-
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -177,12 +166,12 @@ async def update_messages(file_key: str, body: UpdateMessagesBody):
         metadata_changed = True
 
     session.transcript_hash = session.compute_hash()
-    await _save_transcript_async(file_key, session.messages, session_manager.transcripts_dir)
+    await asyncio.to_thread(_save_transcript, file_key, session.messages, session_manager.transcripts_dir)
 
     # If metadata was remapped, save it to disk and broadcast the update
     if metadata_changed:
         meta = session.get_metadata()
-        await _save_metadata_async(file_key, meta, session_manager.transcripts_dir)
+        await asyncio.to_thread(_save_metadata, file_key, meta, session_manager.transcripts_dir)
         await session_manager.broadcast(
             session,
             {
@@ -235,7 +224,7 @@ async def update_metadata(file_key: str, body: UpdateMetadataBody):
         meta["outcome"] = ""
     if body.scenario is not None and not body.scenario:
         meta["scenario"] = ""
-    await _save_metadata_async(file_key, meta, session_manager.transcripts_dir)
+    await asyncio.to_thread(_save_metadata, file_key, meta, session_manager.transcripts_dir)
 
     await session_manager.broadcast(
         session,

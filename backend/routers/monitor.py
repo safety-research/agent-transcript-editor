@@ -325,11 +325,11 @@ def _evict_old_evals() -> None:
 
 def _resolve_jsonl_path(project: str, file_name: str) -> Path:
     """Resolve project + file_name to the full .jsonl path."""
-    from routers.files import get_transcripts_dir
+    from routers.files import _safe_jsonl_name
+    from sessions import _resolve_transcript_path
 
-    transcripts_dir = get_transcripts_dir()
-    fname = file_name if file_name.endswith(".jsonl") else file_name + ".jsonl"
-    return transcripts_dir / project / fname
+    file_key = f"{project}/{_safe_jsonl_name(file_name)}"
+    return _resolve_transcript_path(file_key)
 
 
 def _read_existing_variant_data(project: str, file_name: str, transcript_hash: str | None) -> dict[str, dict]:

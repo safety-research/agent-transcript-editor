@@ -1,5 +1,4 @@
-// Backend API URL (proxied through Vite in development)
-const API_BASE = '/api';
+import { API_BASE } from '../constants';
 
 export async function testConnection(): Promise<{ success: boolean; error?: string }> {
   try {

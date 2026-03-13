@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useStore, parseFileKey } from './store';
 import type { FileState, FileKey } from './store';
 
-const API_BASE = '/api';
+import { API_BASE } from './constants';
 
 function ScoreBadge({ score }: { score: number }) {
   let colorClass = 'score-green';

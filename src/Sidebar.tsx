@@ -23,7 +23,7 @@ interface ProjectDirInfo {
   modified: string | null;
 }
 
-const API_BASE = '/api';
+import { API_BASE } from './constants';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;

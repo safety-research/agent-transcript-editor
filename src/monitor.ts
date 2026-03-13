@@ -8,7 +8,7 @@ import { mechanismDictToString } from './mechanismUtils';
 import { useStore, parseFileKey } from './store';
 import type { FileKey, VariantEval } from './store';
 
-const API_BASE = '/api';
+import { API_BASE } from './constants';
 
 /** Prompt variant metadata from trusted-monitor */
 export interface PromptVariant {
