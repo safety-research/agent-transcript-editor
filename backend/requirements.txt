@@ -14,8 +14,7 @@ python-multipart>=0.0.19
 httpx>=0.27.0
 
 # Trusted monitor (transcript evaluation)
-# pip install git+https://github.com/safety-research/trusted-monitor.git
-trusted-monitor>=0.1.0
+trusted-monitor @ git+https://github.com/safety-research/trusted-monitor.git
 
 # Testing
 pytest>=8.0
