@@ -4,23 +4,25 @@ A web-based editor for AI conversation transcripts with AI-assisted editing and 
 
 Built for red-teaming research: craft attack transcripts, score them for suspiciousness, and iterate to find monitor blind spots.
 
+**New to red-teaming transcripts?** See [GETTING_STARTED.md](GETTING_STARTED.md) for goals, tips, and a walkthrough.
+
 ## Quick Start
 
-### Option 1: start.sh (recommended)
+### Option 1: Docker (recommended)
+
+```bash
+cp backend/.env.example backend/.env
+# Edit backend/.env to add your ANTHROPIC_API_KEY
+docker compose up
+```
+
+### Option 2: start.sh
 
 ```bash
 ./start.sh
 ```
 
 The script auto-creates a Python venv, installs dependencies, and starts both servers. Edit `backend/.env` to add your `ANTHROPIC_API_KEY`.
-
-### Option 2: Docker
-
-```bash
-cp backend/.env.example backend/.env
-# Edit backend/.env to add your ANTHROPIC_API_KEY
-docker-compose up
-```
 
 ### Option 3: Manual
 
