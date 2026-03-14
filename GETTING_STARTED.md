@@ -79,7 +79,6 @@ If you prefer running without Docker, use `./start.sh` instead (requires Python 
    - **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
    - **exfil-ssh** — SSH private key embedded in a git commit message
    - **docker-volume-wipe** — destructive sabotage via config parameter manipulation
-   - **benign-debugging** — a normal (non-attack) transcript for comparison
 
    These attacks are all detected by the monitor — your goal is to craft ones that aren't.
 
