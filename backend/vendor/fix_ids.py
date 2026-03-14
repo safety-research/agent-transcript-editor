@@ -4,8 +4,12 @@ Replaces invalid tool IDs in minimized JSONL transcripts with realistic
 random IDs matching the real Claude Code format. Already-valid IDs are
 preserved.
 
-Also provides verification to check tool IDs for format issues and
-orphaned use/result pairs.
+Also fixes positional mismatches: when tool_use and tool_result blocks
+have valid-format IDs that don't match each other, aligns them by
+position (1st tool_use ↔ 1st tool_result, etc.).
+
+Provides verification to check tool IDs for format issues, orphaned
+use/result pairs, and positional mismatches.
 
 Real tool ID format: toolu_01 + 22 random Base58 characters (30 chars total).
 """
@@ -67,6 +71,17 @@ def _get_content_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _get_role(raw: dict[str, Any]) -> str | None:
+    """Extract role from a transcript entry (either format)."""
+    if "role" in raw and "type" not in raw:
+        return raw.get("role")
+    if "type" in raw and "message" in raw:
+        message = raw.get("message", {})
+        if isinstance(message, dict):
+            return message.get("role")
+    return None
+
+
 # --- Verification ---
 
 
@@ -78,6 +93,8 @@ def verify_tool_ids(transcript_path: Path) -> list[ToolIdIssue]:
     2. All tool_result IDs match the expected format
     3. Every tool_result references a tool_use that exists
     4. Every tool_use has a corresponding tool_result
+    5. Positional mismatches: tool_use/tool_result pairs that have valid
+       format IDs but don't match each other by position
 
     Returns list of issues found (empty = all good).
     """
@@ -87,16 +104,19 @@ def verify_tool_ids(transcript_path: Path) -> list[ToolIdIssue]:
 
     lines = transcript_path.read_text(encoding="utf-8").splitlines()
 
+    # Parse all entries for global checks
+    parsed_entries: list[tuple[int, dict]] = []  # (line_number, entry)
     for line_num, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
             continue
-
         try:
             raw = json.loads(line)
         except json.JSONDecodeError:
             continue
+        parsed_entries.append((line_num, raw))
 
+    for line_num, raw in parsed_entries:
         blocks = _get_content_blocks(raw)
         for block in blocks:
             if not isinstance(block, dict):
@@ -154,6 +174,44 @@ def verify_tool_ids(transcript_path: Path) -> list[ToolIdIssue]:
                 )
             )
 
+    # Check for positional mismatches between assistant→user message pairs
+    pending_use_ids: list[tuple[str, int]] | None = None  # (id, line_num) from last assistant
+    for line_num, raw in parsed_entries:
+        role = _get_role(raw)
+        if role == "assistant":
+            # Collect tool_use IDs in order
+            blocks = _get_content_blocks(raw)
+            use_ids = [
+                (block["id"], line_num)
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block
+            ]
+            pending_use_ids = use_ids if use_ids else None
+
+        elif role == "user" and pending_use_ids is not None:
+            blocks = _get_content_blocks(raw)
+            result_ids = [
+                (block["tool_use_id"], line_num)
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block
+            ]
+
+            if result_ids and len(pending_use_ids) == len(result_ids):
+                for i, ((use_id, _use_ln), (res_id, res_ln)) in enumerate(
+                    zip(pending_use_ids, result_ids)
+                ):
+                    if use_id != res_id:
+                        issues.append(
+                            ToolIdIssue(
+                                line_number=res_ln,
+                                block_type="tool_result",
+                                id_value=res_id,
+                                issue=f"Positional mismatch at position {i}: tool_use has {use_id!r} but tool_result has {res_id!r}",
+                            )
+                        )
+
+            pending_use_ids = None
+
     return issues
 
 
@@ -168,11 +226,18 @@ def format_issues(issues: list[ToolIdIssue]) -> str:
     fmt_issues = [i for i in issues if "Invalid format" in i.issue]
     orphaned_results = [i for i in issues if "Orphaned tool_result" in i.issue]
     orphaned_uses = [i for i in issues if "Orphaned tool_use" in i.issue]
+    positional = [i for i in issues if "Positional mismatch" in i.issue]
 
     if fmt_issues:
         lines.append(f"\033[31mInvalid tool ID format ({len(fmt_issues)}):\033[0m")
         for issue in fmt_issues:
             lines.append(f"  Line {issue.line_number}: {issue.block_type} id={issue.id_value!r}")
+        lines.append("")
+
+    if positional:
+        lines.append(f"\033[35mPositional ID mismatches ({len(positional)}):\033[0m")
+        for issue in positional:
+            lines.append(f"  Line {issue.line_number}: {issue.issue}")
         lines.append("")
 
     if orphaned_results:
@@ -193,17 +258,12 @@ def format_issues(issues: list[ToolIdIssue]) -> str:
 # --- Fixing ---
 
 
-def fix_content_blocks(content: Any, id_map: dict[str, str]) -> Any:
-    """Walk content blocks and replace invalid tool IDs, preserving valid ones."""
-    if not isinstance(content, list):
-        return content
-
-    for block in content:
+def _collect_ids_from_blocks(blocks: list[dict[str, Any]], id_map: dict[str, str]) -> None:
+    """Walk content blocks and populate id_map for any IDs that need replacing."""
+    for block in blocks:
         if not isinstance(block, dict):
             continue
-
         block_type = block.get("type")
-
         if block_type == "tool_use" and "id" in block:
             old_id = block["id"]
             if old_id not in id_map:
@@ -211,8 +271,6 @@ def fix_content_blocks(content: Any, id_map: dict[str, str]) -> Any:
                     id_map[old_id] = old_id
                 else:
                     id_map[old_id] = generate_tool_id()
-            block["id"] = id_map[old_id]
-
         elif block_type == "tool_result" and "tool_use_id" in block:
             old_id = block["tool_use_id"]
             if old_id not in id_map:
@@ -220,65 +278,107 @@ def fix_content_blocks(content: Any, id_map: dict[str, str]) -> Any:
                     id_map[old_id] = old_id
                 else:
                     id_map[old_id] = generate_tool_id()
-            block["tool_use_id"] = id_map[old_id]
-
-    return content
 
 
-def fix_entry(entry: dict, id_map: dict[str, str]) -> dict:
-    """Fix tool IDs in a single transcript entry.
+def fix_transcript(input_lines: list[str]) -> tuple[list[str], dict[str, str], int]:
+    """Fix all tool IDs in a transcript using string replacement to preserve formatting.
 
-    Handles both minimal format (role/content at top level) and
-    full format (type/message wrapper).
+    Three passes:
+    1. Parse to discover all tool IDs and build the replacement map
+    2. Positional fix: find tool_result IDs that don't match their positional
+       tool_use counterparts and add those to the replacement map
+    3. String-replace old IDs with new IDs on the raw lines
+
+    Returns (output_lines, id_map, positional_fixes).
     """
-    # Minimal format: role + content at top level
-    if "role" in entry and "content" in entry and "type" not in entry:
-        entry["content"] = fix_content_blocks(entry["content"], id_map)
-        return entry
-
-    # Full format: type + message wrapper
-    if "type" in entry and "message" in entry:
-        message = entry["message"]
-        if isinstance(message, dict) and "content" in message:
-            message["content"] = fix_content_blocks(message["content"], id_map)
-        return entry
-
-    # Unknown format — pass through unchanged
-    return entry
-
-
-def fix_transcript(input_lines: list[str]) -> tuple[list[dict], dict[str, str]]:
-    """Fix all tool IDs in a transcript. Returns (entries, id_map)."""
     id_map: dict[str, str] = {}
-    entries = []
+    entries: list[dict] = []
+    valid_line_indices: list[int] = []
 
-    for line in input_lines:
-        line = line.strip()
-        if not line:
+    # Pass 1: parse and collect IDs
+    for i, line in enumerate(input_lines):
+        stripped = line.strip()
+        if not stripped:
             continue
-
         try:
-            entry = json.loads(line)
+            entry = json.loads(stripped)
         except json.JSONDecodeError:
             continue
+        valid_line_indices.append(i)
+        entries.append(entry)
+        blocks = _get_content_blocks(entry)
+        _collect_ids_from_blocks(blocks, id_map)
 
-        entries.append(fix_entry(entry, id_map))
+    # Pass 2: find positional mismatches and add to id_map
+    positional_fixes = 0
+    pending_use_ids: list[str] | None = None
+    for entry in entries:
+        role = _get_role(entry)
+        blocks = _get_content_blocks(entry)
+        if role == "assistant":
+            use_ids = [
+                block["id"]
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block
+            ]
+            pending_use_ids = use_ids if use_ids else None
+        elif role == "user" and pending_use_ids is not None:
+            result_blocks = [
+                block
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block
+            ]
+            if len(result_blocks) == len(pending_use_ids):
+                for use_id, result_block in zip(pending_use_ids, result_blocks):
+                    res_id = result_block["tool_use_id"]
+                    # Map the result ID to the use ID (use ID is already mapped)
+                    mapped_use_id = id_map.get(use_id, use_id)
+                    mapped_res_id = id_map.get(res_id, res_id)
+                    if mapped_res_id != mapped_use_id:
+                        id_map[res_id] = mapped_use_id
+                        positional_fixes += 1
+            elif result_blocks and len(result_blocks) != len(pending_use_ids):
+                print(
+                    f"\033[33mWarning: tool_use count ({len(pending_use_ids)}) != "
+                    f"tool_result count ({len(result_blocks)}), skipping positional fix\033[0m",
+                    file=sys.stderr,
+                )
+            pending_use_ids = None
 
-    return entries, id_map
+    # Pass 3: string-replace on raw lines (only IDs that actually changed)
+    replacements = {old: new for old, new in id_map.items() if old != new}
+    output_lines = list(input_lines)
+    if replacements:
+        for i in valid_line_indices:
+            line = output_lines[i]
+            for old_id, new_id in replacements.items():
+                count = line.count(old_id)
+                if count == 0:
+                    continue
+                if count != 1:
+                    raise ValueError(
+                        f"Tool ID {old_id!r} appears {count} times on line {i + 1} "
+                        f"(expected exactly 1) — aborting to avoid incorrect replacement"
+                    )
+                line = line.replace(old_id, new_id)
+            output_lines[i] = line
+
+    return output_lines, id_map, positional_fixes
 
 
-def fix_transcript_file(transcript_path: Path, output_path: Path) -> tuple[int, int]:
+def fix_transcript_file(transcript_path: Path, output_path: Path) -> tuple[int, int, int]:
     """Fix all tool IDs in a transcript file, writing results to output_path.
 
     Convenience wrapper around fix_transcript() for file-to-file operation.
+    Preserves original JSON formatting — only tool ID strings are changed.
 
-    Returns (entries_count, ids_replaced).
+    Returns (entries_count, ids_replaced, positional_fixes).
     """
     lines = transcript_path.read_text(encoding="utf-8").splitlines()
-    entries, id_map = fix_transcript(lines)
-    output_lines = [json.dumps(e, separators=(",", ":"), ensure_ascii=False) for e in entries]
+    output_lines, id_map, positional_fixes = fix_transcript(lines)
     output_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
-    return len(entries), len(id_map)
+    entry_count = sum(1 for l in lines if l.strip())
+    return entry_count, len(id_map), positional_fixes
 
 
 # --- CLI ---
@@ -286,7 +386,11 @@ def fix_transcript_file(transcript_path: Path, output_path: Path) -> tuple[int, 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Replace tool IDs in JSONL transcripts with realistic random IDs",
+        description=(
+            "Fix tool IDs in JSONL transcripts: replaces invalid-format IDs with "
+            "realistic random IDs, and aligns positional mismatches between "
+            "tool_use/tool_result pairs"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -336,30 +440,42 @@ Examples:
             sys.exit(0)
 
     # Fix IDs
-    entries, id_map = fix_transcript(lines)
+    output_lines, id_map, positional_fixes = fix_transcript(lines)
 
-    if not entries:
+    entry_count = sum(1 for l in lines if l.strip())
+    if entry_count == 0:
         print("Warning: No entries found in transcript", file=sys.stderr)
 
-    if not id_map:
-        print("Warning: No tool IDs found to replace", file=sys.stderr)
+    if not id_map and positional_fixes == 0:
+        print("Warning: No tool IDs found to fix", file=sys.stderr)
 
     # Dry run: just show the mapping
     if args.dry_run:
-        print(f"Found {len(id_map)} unique tool IDs:", file=sys.stderr)
+        format_replaced = sum(1 for old, new in id_map.items() if old != new)
+        print(f"\033[36mFound {len(id_map)} unique tool IDs ({format_replaced} format-fixed):\033[0m", file=sys.stderr)
         for old, new in id_map.items():
-            print(f"  {old} → {new}", file=sys.stderr)
+            if old == new:
+                print(f"  \033[32m{old} (valid)\033[0m", file=sys.stderr)
+            else:
+                print(f"  \033[33m{old} → {new}\033[0m", file=sys.stderr)
+        if positional_fixes:
+            print(f"\033[35m{positional_fixes} positional mismatch(es) fixed\033[0m", file=sys.stderr)
         return
 
-    # Format output (compact JSON, matching minimizer style)
-    output_lines = [json.dumps(e, separators=(",", ":")) for e in entries]
     output = "\n".join(output_lines)
 
     # Write output
     if args.output:
         Path(args.output).write_text(output + "\n")
+        format_replaced = sum(1 for old, new in id_map.items() if old != new)
+        parts = []
+        if format_replaced:
+            parts.append(f"{format_replaced} format-fixed")
+        if positional_fixes:
+            parts.append(f"{positional_fixes} positional-fixed")
+        fix_summary = ", ".join(parts) if parts else "no changes"
         print(
-            f"Wrote {len(entries)} entries ({len(id_map)} IDs replaced) to {args.output}",
+            f"\033[32mWrote {entry_count} entries ({fix_summary}) to {args.output}\033[0m",
             file=sys.stderr,
         )
     else:

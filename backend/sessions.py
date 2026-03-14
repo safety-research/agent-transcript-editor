@@ -204,10 +204,10 @@ def auto_fix_messages(messages: list[dict[str, Any]], *, minimize: bool = True) 
         from fix_ids import fix_transcript
 
         input_lines = [json.dumps(m) for m in messages]
-        fixed_entries, id_map = fix_transcript(input_lines)
+        fixed_lines, id_map, _positional_fixes = fix_transcript(input_lines)
         ids_replaced = sum(1 for old, new in id_map.items() if old != new)
         if ids_replaced > 0:
-            messages = fixed_entries
+            messages = [json.loads(line) for line in fixed_lines if line.strip()]
             auto_fixed["tool_ids_fixed"] = ids_replaced
     except ModuleNotFoundError:
         pass

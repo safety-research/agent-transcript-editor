@@ -90,10 +90,11 @@ async def fix_tool_ids(request: FixIdsRequest):
 
     # Fix mode: convert messages to JSONL lines, run fixer, return fixed messages
     input_lines = [json.dumps(m) for m in request.messages]
-    fixed_entries, id_map = fix_transcript(input_lines)
+    fixed_lines, id_map, _positional_fixes = fix_transcript(input_lines)
+    fixed_messages = [json.loads(line) for line in fixed_lines if line.strip()]
 
     return FixIdsResponse(
-        messages=fixed_entries,
+        messages=fixed_messages,
         ids_fixed=len(id_map),
         id_map=id_map,
     )

@@ -666,9 +666,10 @@ async def _fix_tool_ids(messages: list[dict[str, Any]]) -> tuple[list[dict[str, 
         from fix_ids import fix_transcript
 
         input_lines = [json.dumps(m) for m in messages]
-        fixed_entries, id_map = await _to_agent_thread(fix_transcript, input_lines)
+        fixed_lines, id_map, _positional_fixes = await _to_agent_thread(fix_transcript, input_lines)
         fix_count = sum(1 for old, new in id_map.items() if old != new)
-        return fixed_entries, fix_count
+        fixed_messages = [json.loads(line) for line in fixed_lines if line.strip()]
+        return fixed_messages, fix_count
     except Exception:
         return messages, 0
 
@@ -1468,6 +1469,23 @@ async def run_agent(
                     break
                 except Exception as e:
                     error_str = str(e).lower()
+                    # Configuration errors should fail immediately, not retry
+                    is_config_error = (
+                        "not configured" in error_str
+                        or "api key" in error_str
+                        or "api_key" in error_str
+                    )
+                    if is_config_error:
+                        logger.error(f"Configuration error (not retryable): {e}")
+                        await session_manager.broadcast(
+                            session,
+                            {
+                                "type": "agent_error",
+                                "error": str(e),
+                                "message": "Configuration error — check your API key and .env file.",
+                            },
+                        )
+                        raise
                     is_retryable = (
                         "overloaded" in error_str
                         or "529" in error_str
