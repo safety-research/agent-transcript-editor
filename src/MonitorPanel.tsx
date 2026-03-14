@@ -114,6 +114,59 @@ function ScoreCircle({ score, size = 88, label, secondary, inverted }: {
   );
 }
 
+function PlaceholderCircle({ size = 44, label, onClick }: {
+  size?: number;
+  label?: string;
+  onClick: () => void;
+}) {
+  const iconSize = size <= 48 ? 12 : 18;
+  return (
+    <div className="monitor-score-circle-wrap">
+      <div
+        className="monitor-score-circle monitor-score-placeholder"
+        style={{ width: size, height: size }}
+        onClick={onClick}
+        title={`Run ${label} evaluation`}
+      >
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" className="placeholder-play-icon">
+          <polygon points="8,5 20,12 8,19" fill="currentColor" />
+        </svg>
+      </div>
+      {label && <div className="monitor-score-item-label">{label}</div>}
+    </div>
+  );
+}
+
+function SpinnerCircle({ size = 44, label }: { size?: number; label?: string }) {
+  const radius = (size / 2) - (size <= 48 ? 5 : 8);
+  const strokeWidth = size >= 72 ? 5 : size <= 48 ? 3 : 4;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="monitor-score-circle-wrap">
+      <div
+        className="monitor-score-circle monitor-score-spinner"
+        style={{ width: size, height: size }}
+      >
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <circle
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke="var(--border-subtle)" strokeWidth={strokeWidth}
+          />
+          <circle
+            className="monitor-spinner-arc"
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke="var(--purple-400)" strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeDasharray={`${circumference * 0.28} ${circumference * 0.72}`}
+            style={{ transformOrigin: `${size / 2}px ${size / 2}px` }}
+          />
+        </svg>
+      </div>
+      {label && <div className="monitor-score-item-label">{label}</div>}
+    </div>
+  );
+}
+
 function EvalCard({ result, index, type }: {
   result: Record<string, unknown>;
   index: number;
@@ -330,7 +383,7 @@ export function MonitorPanel({
   // not just because the setting is enabled (it may have been skipped due to missing metadata).
   const failedMetrics: string[] = [];
   if (isDone) {
-    if (monitorEval.score === null) failedMetrics.push('suspiciousness');
+    if (monitorEval.score === null && monitorEval.results.length > 0) failedMetrics.push('suspiciousness');
     if (showEgregiousness && monitorEval.egregiousness?.results?.length && monitorEval.egregiousness.score == null) failedMetrics.push('egregiousness');
     if (showIncriminating && monitorEval.incriminating?.results?.length && monitorEval.incriminating.score == null) failedMetrics.push('incriminating');
     if (showEffectiveness && monitorEval.effectiveness?.results?.length && monitorEval.effectiveness.score == null) failedMetrics.push('effectiveness');
@@ -386,6 +439,39 @@ export function MonitorPanel({
     return `mean: ${mean.toFixed(1)} \u00b1 ${stdDev.toFixed(1)}`;
   })();
 
+  const { runningMetrics } = monitorEval;
+  const isMetricRunning = (metric: string) =>
+    isRunning && (runningMetrics === null || runningMetrics.includes(metric));
+
+  const renderMetric = (
+    metric: MetricType,
+    label: string,
+    posClass: string,
+    score: number | null | undefined,
+    canRun: boolean,
+    inverted?: boolean,
+  ) => {
+    const hasScore = score !== null && score !== undefined;
+    const metricRunning = isMetricRunning(metric);
+    if (!hasScore && !metricRunning && !canRun) return null;
+
+    return (
+      <div
+        key={metric}
+        className={`monitor-score-item ${posClass} ${hasScore && selectedMetric === metric ? 'selected' : ''}`}
+        onClick={hasScore ? () => setSelectedMetric(metric) : undefined}
+      >
+        {hasScore ? (
+          <ScoreCircle score={score} size={44} label={label} inverted={inverted} />
+        ) : metricRunning ? (
+          <SpinnerCircle size={44} label={label} />
+        ) : canRun ? (
+          <PlaceholderCircle size={44} label={label} onClick={() => onRerunMetric(metric)} />
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="monitor-panel-body">
       {/* Fixed top: score + metadata + button */}
@@ -394,69 +480,29 @@ export function MonitorPanel({
           <div className="monitor-score-section">
             {hasMultipleMetrics ? (
               <div className="monitor-scores-arc">
-                {/* Top row: Incriminating, Effective, Confidence — gentle arc */}
+                {/* Top row: Incriminating, Effective, Confidence */}
                 <div className="monitor-scores-arc-top">
-                  {showIncriminating && monitorEval.incriminating?.score !== null && monitorEval.incriminating?.score !== undefined && (
-                    <div
-                      className={`monitor-score-item monitor-arc-pos-inc ${selectedMetric === 'incriminating' ? 'selected' : ''}`}
-                      onClick={() => setSelectedMetric('incriminating')}
-                    >
-                      <ScoreCircle score={monitorEval.incriminating.score} size={44} label="Incriminating" />
-                    </div>
-                  )}
-                  {showEffectiveness && monitorEval.effectiveness?.score !== null && monitorEval.effectiveness?.score !== undefined && (
-                    <div
-                      className={`monitor-score-item monitor-arc-pos-eff ${selectedMetric === 'effectiveness' ? 'selected' : ''}`}
-                      onClick={() => setSelectedMetric('effectiveness')}
-                    >
-                      <ScoreCircle score={monitorEval.effectiveness.score} size={44} label="Effective" />
-                    </div>
-                  )}
-                  {showConfidence && monitorEval.confidence?.score !== null && monitorEval.confidence?.score !== undefined && (
-                    <div
-                      className={`monitor-score-item monitor-arc-pos-con ${selectedMetric === 'confidence' ? 'selected' : ''}`}
-                      onClick={() => setSelectedMetric('confidence')}
-                    >
-                      <ScoreCircle score={monitorEval.confidence.score} size={44} label="Confidence" inverted />
-                    </div>
-                  )}
+                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', monitorEval.incriminating?.score, hasOutcome && hasMechanism)}
+                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', monitorEval.effectiveness?.score, hasOutcome && hasMechanism)}
+                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', monitorEval.confidence?.score, hasOutcome && hasMechanism, true)}
                 </div>
 
                 {/* Bottom row: Egregious (left), Suspicious (center), Realism (right) */}
                 <div className="monitor-scores-arc-bottom">
-                  {showEgregiousness && monitorEval.egregiousness?.score !== null && monitorEval.egregiousness?.score !== undefined && (
-                    <div
-                      className={`monitor-score-item monitor-arc-pos-egr ${selectedMetric === 'egregiousness' ? 'selected' : ''}`}
-                      onClick={() => setSelectedMetric('egregiousness')}
-                    >
-                      <ScoreCircle score={monitorEval.egregiousness.score} size={44} label="Egregious" />
-                    </div>
-                  )}
+                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', monitorEval.egregiousness?.score, hasOutcome)}
                   <div
                     className={`monitor-score-item monitor-arc-pos-sus ${selectedMetric === 'suspiciousness' ? 'selected' : ''}`}
-                    onClick={() => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); }}
+                    onClick={monitorEval.score !== null ? () => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); } : undefined}
                   >
                     {monitorEval.score !== null ? (
                       <ScoreCircle score={monitorEval.score} size={80} label="Suspicious" />
+                    ) : isMetricRunning('suspiciousness') ? (
+                      <SpinnerCircle size={80} label="Suspicious" />
                     ) : (
-                      <div className="monitor-score-circle-wrap">
-                        <div className="monitor-score-circle monitor-score-pending" style={{ width: 80, height: 80 }}>
-                          <span className="streaming-dot" />
-                          <span className="streaming-dot" />
-                          <span className="streaming-dot" />
-                        </div>
-                        <div className="monitor-score-item-label">Suspicious</div>
-                      </div>
+                      <PlaceholderCircle size={80} label="Suspicious" onClick={() => onRerunMetric('suspiciousness')} />
                     )}
                   </div>
-                  {showRealism && monitorEval.realism?.score !== null && monitorEval.realism?.score !== undefined && (
-                    <div
-                      className={`monitor-score-item monitor-arc-pos-rea ${selectedMetric === 'realism' ? 'selected' : ''}`}
-                      onClick={() => setSelectedMetric('realism')}
-                    >
-                      <ScoreCircle score={monitorEval.realism.score} size={44} label="Realism" inverted />
-                    </div>
-                  )}
+                  {showRealism && renderMetric('realism', 'Realism', 'monitor-arc-pos-rea', monitorEval.realism?.score, true, true)}
                 </div>
               </div>
             ) : (
@@ -507,61 +553,37 @@ export function MonitorPanel({
               </div>
             )}
 
-            {/* Rerun buttons for missing metrics */}
+            {/* Run missing prompt variants for suspiciousness */}
             {isDone && !isRunning && (() => {
-              const missing: { metric: string; label: string; variants?: string[] }[] = [];
-              // Check if any enabled prompt variants haven't been run for suspiciousness
-              if (promptVariants.length > 0 && monitorEval.score !== null) {
-                const ranVariants = new Set(monitorEval.variantEvals.map(v => v.variant));
-                const missingVariants = promptVariants.filter(v => !ranVariants.has(v));
-                if (missingVariants.length > 0) {
-                  const labels = missingVariants.map(v => variantLabel(v)).join(', ');
-                  missing.push({ metric: 'suspiciousness', label: `Suspicious (${labels})`, variants: missingVariants });
-                }
-              }
-              if (showEgregiousness && hasOutcome && monitorEval.egregiousness?.score == null) {
-                missing.push({ metric: 'egregiousness', label: 'Egregious' });
-              }
-              if (showIncriminating && hasOutcome && hasMechanism && monitorEval.incriminating?.score == null) {
-                missing.push({ metric: 'incriminating', label: 'Incriminating' });
-              }
-              if (showEffectiveness && hasOutcome && hasMechanism && monitorEval.effectiveness?.score == null) {
-                missing.push({ metric: 'effectiveness', label: 'Effective' });
-              }
-              if (showConfidence && hasOutcome && hasMechanism && monitorEval.confidence?.score == null) {
-                missing.push({ metric: 'confidence', label: 'Confidence' });
-              }
-              if (showRealism && monitorEval.realism?.score == null) {
-                missing.push({ metric: 'realism', label: 'Realism' });
-              }
-              if (missing.length === 0) return null;
+              if (promptVariants.length === 0 || monitorEval.score === null) return null;
+              const ranVariants = new Set(monitorEval.variantEvals.map(v => v.variant));
+              const missingVariants = promptVariants.filter(v => !ranVariants.has(v));
+              if (missingVariants.length === 0) return null;
+              const labels = missingVariants.map(v => variantLabel(v)).join(', ');
               return (
                 <div className="monitor-missing-metrics">
-                  {missing.map(({ metric, label, variants }) => (
-                    <button
-                      key={metric}
-                      className="monitor-rerun-btn"
-                      onClick={() => onRerunMetric(metric, variants)}
-                      title={`Run ${label} evaluation`}
-                    >
-                      Run {label}
-                    </button>
-                  ))}
+                  <button
+                    className="monitor-rerun-btn"
+                    onClick={() => onRerunMetric('suspiciousness', missingVariants)}
+                    title={`Run Suspicious (${labels}) evaluation`}
+                  >
+                    Run Suspicious ({labels})
+                  </button>
                 </div>
               );
             })()}
           </div>
         )}
 
-        {/* Running state — show compact indicator if scores are already appearing */}
-        {isRunning && (
-          <div className="monitor-status" style={hasAnyScore ? { padding: '4px 0' } : undefined}>
+        {/* Running state — only show when no scores have arrived yet (spinners cover partial progress) */}
+        {isRunning && !hasAnyScore && (
+          <div className="monitor-status">
             <div className="llm-streaming" style={{ justifyContent: 'center' }}>
               <span className="streaming-dot" />
               <span className="streaming-dot" />
               <span className="streaming-dot" />
             </div>
-            <span>{hasAnyScore ? 'Still evaluating remaining metrics...' : 'Evaluating transcript...'}</span>
+            <span>Evaluating transcript...</span>
           </div>
         )}
 

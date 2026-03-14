@@ -66,6 +66,7 @@ export interface MonitorEval {
   realism: RealismEval | null;
   transcriptHash: string | null;
   errorMessage: string | null;
+  runningMetrics: string[] | null;  // which metrics are currently being evaluated (null = all)
 }
 
 interface SidecarEvals {
@@ -144,6 +145,7 @@ export function monitorEvalFromSidecar(
     realism: real ?? (scores.realism != null ? { score: scores.realism, reasoning: null, results: [] } : null),
     transcriptHash: metadata.transcript_hash ?? null,
     errorMessage: null,
+    runningMetrics: null,
   };
 }
 
@@ -216,6 +218,7 @@ function defaultMonitorEval(): MonitorEval {
     realism: null,
     transcriptHash: null,
     errorMessage: null,
+    runningMetrics: null,
   };
 }
 
