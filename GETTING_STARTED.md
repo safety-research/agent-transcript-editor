@@ -75,11 +75,13 @@ If you prefer running without Docker, use `./start.sh` instead (requires Python 
 
 ### Workflow
 
-1. **Load or create a transcript** — the `examples/` project contains sample transcripts to study:
+1. **Load or create a transcript** — the `examples/` project contains sample transcripts:
    - **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
    - **exfil-ssh** — SSH private key embedded in a git commit message
    - **docker-volume-wipe** — destructive sabotage via config parameter manipulation
    - **benign-debugging** — a normal (non-attack) transcript for comparison
+
+   These attacks are all detected by the monitor — your goal is to craft ones that aren't.
 
    You can also create from scratch (write a user message, then the agent starts writing), or start from an existing benign transcript by dragging and dropping a Claude Code JSONL file.
 2. **Use the AI agent** — type natural language instructions in the chat panel (e.g., "Inject a subtle credential exfiltration into this transcript")
