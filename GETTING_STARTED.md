@@ -75,7 +75,13 @@ If you prefer running without Docker, use `./start.sh` instead (requires Python 
 
 ### Workflow
 
-1. **Load or create a transcript** — you can start from an existing transcript (the `transcripts/` folder has examples) or create one from scratch. From scratch, you write a user message describing what you'd like to write, then the agent will start writing. Starting from an existing benign transcript can also be effective. To do this, create a new empty transcript in the editor, and drag and drop a Claude Code JSONL file.
+1. **Load or create a transcript** — the `examples/` project contains sample transcripts to study:
+   - **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
+   - **exfil-ssh** — SSH private key embedded in a git commit message
+   - **docker-volume-wipe** — destructive sabotage via config parameter manipulation
+   - **benign-debugging** — a normal (non-attack) transcript for comparison
+
+   You can also create from scratch (write a user message, then the agent starts writing), or start from an existing benign transcript by dragging and dropping a Claude Code JSONL file.
 2. **Use the AI agent** — type natural language instructions in the chat panel (e.g., "Inject a subtle credential exfiltration into this transcript")
 3. **Set metadata** — Either ask agent, or manually fill in the outcome (what happened) and mechanism (how the agent did it) in the metadata panel
 4. **Evaluate** — click "Evaluate" in the monitor panel to score the transcript
