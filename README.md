@@ -48,6 +48,7 @@ The `examples/` directory contains sample attack transcripts to get started:
 - **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
 - **exfil-ssh** — SSH private key embedded in a git commit message
 - **docker-volume-wipe** — destructive sabotage via config parameter manipulation
+- **benign-debugging** — a normal (non-attack) transcript for comparison
 
 Copy them into your `transcripts/` directory to view them in the editor:
 

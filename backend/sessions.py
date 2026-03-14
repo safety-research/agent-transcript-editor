@@ -85,6 +85,7 @@ class Session:
     summary: dict[int, str] | None = None
     sidecar_metadata: dict[str, Any] = field(default_factory=dict)  # Full sidecar for frontend (scores, evals, etc.)
     auto_fixed: dict[str, Any] = field(default_factory=dict)  # Auto-fixes applied on load
+    loaded_mtime: float | None = None  # mtime of .jsonl when session was loaded (for conflict detection)
     mode: str = "edit"  # 'edit' or 'create'
 
     # Transcript hash (DJB2 of messages + metadata, matches frontend hashTranscriptState)
@@ -217,16 +218,18 @@ def auto_fix_messages(messages: list[dict[str, Any]], *, minimize: bool = True) 
 
 def _load_transcript(
     file_key: str, transcripts_dir: Path | None = None
-) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], float | None]:
     """Load transcript messages and sidecar metadata from disk.
 
     Also applies auto-fixes (minimization, tool ID fixing) and saves back if needed.
-    Returns (messages, metadata, auto_fixed).
+    Returns (messages, metadata, auto_fixed, mtime).
     """
     transcript_path = _resolve_transcript_path(file_key, transcripts_dir)
 
     messages: list[dict[str, Any]] = []
+    mtime: float | None = None
     if transcript_path.exists():
+        mtime = transcript_path.stat().st_mtime
         with open(transcript_path) as f:
             for line in f:
                 line = line.strip()
@@ -244,7 +247,11 @@ def _load_transcript(
     # Load sidecar metadata
     metadata = sidecar.load(transcript_path) or {}
 
-    return messages, metadata, auto_fixed
+    # Update mtime after auto-fixes (we just wrote the file)
+    if auto_fixed and transcript_path.exists():
+        mtime = transcript_path.stat().st_mtime
+
+    return messages, metadata, auto_fixed, mtime
 
 
 def _save_transcript(file_key: str, messages: list[dict[str, Any]], transcripts_dir: Path | None = None) -> None:
@@ -318,10 +325,10 @@ class GlobalSettingsBody(BaseModel):
     - Frontend SETTINGS_KEY_MAP (must match these field names)
     """
 
-    prompt_mode: str = "creative"  # "creative", "faithful", "both"
+    prompt_mode: str = "faithful"  # "creative", "faithful", "both"
     child_lock_enabled: bool = False
     lock_first_message: bool = False
-    n_evals: int = 5
+    n_evals: int = 1
     n_evals_other: int = 1
     prompt_variants: list[str] = Field(default_factory=lambda: list(DEFAULT_PROMPT_VARIANTS))
     eval_egregiousness: bool = True
@@ -335,6 +342,7 @@ class GlobalSettingsBody(BaseModel):
     llm_api_key_id: str = "default"
     auto_eval_enabled: bool = False
     auto_eval_on_load: bool = False
+    rate_limit_enabled: bool = False
     tpm_default: int = 2_000_000
     tpm_alt: int = 2_000_000
 
@@ -368,10 +376,11 @@ class SessionManager:
         return self.transcripts_dir / "global_settings.json"
 
     def _apply_tpm_settings(self) -> None:
-        """Apply persisted TPM settings to the rate_limit module."""
+        """Apply persisted TPM/rate-limit settings to the rate_limit module."""
         try:
-            from rate_limit import set_limit
+            from rate_limit import set_limit, set_enabled
 
+            set_enabled(self.rate_limit_enabled)
             set_limit("default", self.tpm_default)
             set_limit("alt", self.tpm_alt)
         except Exception as e:
@@ -434,7 +443,7 @@ class SessionManager:
 
             # Load from disk in a thread (doesn't hold the global lock)
             transcripts_dir = self.transcripts_dir
-            messages, metadata, auto_fixed = await asyncio.to_thread(_load_transcript, file_key, transcripts_dir)
+            messages, metadata, auto_fixed, mtime = await asyncio.to_thread(_load_transcript, file_key, transcripts_dir)
             content_blocks, chat_history = await asyncio.to_thread(_load_chat, file_key, transcripts_dir)
 
             session = Session(
@@ -448,6 +457,7 @@ class SessionManager:
                 summary=metadata.get("summary"),
                 sidecar_metadata=metadata,
                 auto_fixed=auto_fixed,
+                loaded_mtime=mtime,
                 consistency_suppressions=metadata.get("consistency_suppressions", []),
             )
             session.transcript_hash = session.compute_hash()
@@ -509,6 +519,61 @@ class SessionManager:
             del self._sessions[file_key]
             logger.info(f"Cleaned up session {file_key}")
 
+    async def reload_from_disk(self, file_key: str) -> Session | None:
+        """Drop the in-memory session and reload from disk.
+
+        Returns the new session, or None if no session existed.
+        Refuses to reload if an agent is actively streaming.
+        """
+        async with self._lock:
+            session = self._sessions.get(file_key)
+            if not session:
+                return None
+
+            if session.is_streaming:
+                raise RuntimeError(f"Cannot reload {file_key}: agent is currently running")
+
+            # Preserve subscribers so they stay connected
+            subscribers = session.subscribers
+
+            # Cancel cleanup timer if pending
+            if session._cleanup_task and not session._cleanup_task.done():
+                session._cleanup_task.cancel()
+
+            del self._sessions[file_key]
+
+        # Load fresh from disk (outside lock)
+        messages, metadata, auto_fixed, mtime = await asyncio.to_thread(_load_transcript, file_key, self.transcripts_dir)
+        content_blocks, chat_history = await asyncio.to_thread(_load_chat, file_key, self.transcripts_dir)
+
+        new_session = Session(
+            file_key=file_key,
+            messages=messages,
+            content_blocks=content_blocks,
+            chat_history=chat_history,
+            outcome=metadata.get("outcome"),
+            scenario=metadata.get("scenario"),
+            mechanism=metadata.get("mechanism"),
+            summary=metadata.get("summary"),
+            sidecar_metadata=metadata,
+            auto_fixed=auto_fixed,
+            loaded_mtime=mtime,
+            consistency_suppressions=metadata.get("consistency_suppressions", []),
+            subscribers=subscribers,
+        )
+        new_session.transcript_hash = new_session.compute_hash()
+
+        async with self._lock:
+            self._sessions[file_key] = new_session
+
+        # Notify subscribers of the reload
+        state = self.get_session_state(new_session)
+        state["type"] = "session_reloaded"
+        await self.broadcast(new_session, state)
+
+        logger.info(f"Reloaded session {file_key} from disk ({len(messages)} messages, hash={new_session.transcript_hash})")
+        return new_session
+
     async def destroy_session(self, file_key: str) -> None:
         """Destroy a session without flushing to disk (used when file is deleted)."""
         async with self._lock:
@@ -540,8 +605,21 @@ class SessionManager:
         preventing stale cache from overwriting external file edits.
         """
         if session.dirty:
+            # Check if file was modified externally since we loaded it
+            transcript_path = _resolve_transcript_path(session.file_key, self.transcripts_dir)
+            if session.loaded_mtime is not None and transcript_path.exists():
+                current_mtime = transcript_path.stat().st_mtime
+                if current_mtime > session.loaded_mtime:
+                    logger.warning(
+                        f"Conflict: {session.file_key} was modified on disk since session loaded "
+                        f"(loaded={session.loaded_mtime}, disk={current_mtime}). "
+                        f"Overwriting with session data (session has unsaved agent edits)."
+                    )
             try:
                 await asyncio.to_thread(_save_transcript, session.file_key, session.messages, self.transcripts_dir)
+                # Update loaded_mtime to reflect the write we just did
+                if transcript_path.exists():
+                    session.loaded_mtime = transcript_path.stat().st_mtime
                 session.dirty = False
             except Exception as e:
                 logger.error(f"Failed to save transcript {session.file_key}: {e}")

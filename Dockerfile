@@ -28,8 +28,8 @@ COPY CREATIVE.md FAITHFUL.md ./
 # Copy built frontend
 COPY --from=frontend-build /app/dist/ dist/
 
-# Create transcripts directory
-RUN mkdir -p transcripts/default
+# Seed transcripts with examples so the editor isn't empty on first run
+COPY examples/ transcripts/examples/
 
 EXPOSE 8000
 

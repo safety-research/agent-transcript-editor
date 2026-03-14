@@ -112,7 +112,7 @@ export function LengthExtensionDialog({ messages, onExtend, onClose }: Props) {
                     checked={selectedMethods.includes(method.id)}
                     onChange={() => toggleMethod(method.id)}
                   />
-                  <div>
+                  <div className="method-text">
                     <div className="method-label">{method.label}</div>
                     <div className="method-desc">{method.description}</div>
                   </div>

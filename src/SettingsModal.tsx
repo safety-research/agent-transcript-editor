@@ -89,17 +89,17 @@ export function SettingsModal({ onClose }: Props) {
                   checked={childLock}
                   onChange={e => putGlobalSettings({ child_lock_enabled: e.target.checked })}
                 />
-                Child lock
+                Lock after scoring
               </label>
             </div>
             <span className="help-text" style={{ marginTop: '-0.5rem', display: 'block' }}>
-              After the AI calls get_monitor_score, block further edits and metadata changes for the rest of that chat
+              After the agent calls get_monitor_score, block further edits and metadata changes
             </span>
 
             <div className="form-row">
               <label className="form-row-label">Prompt mode</label>
               <select
-                value={promptMode ?? 'creative'}
+                value={promptMode ?? 'faithful'}
                 onChange={e => putGlobalSettings({ prompt_mode: e.target.value })}
                 className="form-input-sm"
               >
@@ -145,7 +145,7 @@ export function SettingsModal({ onClose }: Props) {
                   checked={monitorSettings.enabled}
                   onChange={e => putGlobalSettings({ auto_eval_enabled: e.target.checked })}
                 />
-                Auto-evaluate after accept
+                Auto-evaluate after agent completes
               </label>
             </div>
 
@@ -276,6 +276,22 @@ export function SettingsModal({ onClose }: Props) {
             </span>
 
             <div className="form-row">
+              <label className="form-row-label">
+                <input
+                  type="checkbox"
+                  checked={monitorSettings.rateLimitEnabled}
+                  onChange={e => {
+                    putGlobalSettings({ rate_limit_enabled: e.target.checked });
+                  }}
+                />
+                Enable TPM rate limiting
+              </label>
+            </div>
+            <span className="help-text" style={{ marginTop: '-0.5rem', display: 'block' }}>
+              When enabled, throttles API calls to stay within the TPM budget below
+            </span>
+
+            <div className="form-row">
               <label className="form-row-label">TPM limit (default key)</label>
               <input
                 type="number"
@@ -348,14 +364,6 @@ export function SettingsModal({ onClose }: Props) {
             </span>
           </div>
 
-          <div className="form-group" style={{ marginTop: '1rem' }}>
-            <label>Configuration</label>
-            <span className="help-text">
-              API keys are now managed on the backend for security.
-              <br />
-              Edit <code>backend/.env</code> to configure your Anthropic API key.
-            </span>
-          </div>
         </div>
         <div className="modal-footer">
           <button className="primary" onClick={onClose}>Close</button>
