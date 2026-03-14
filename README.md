@@ -41,6 +41,21 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### Example Transcripts
+
+The `examples/` directory contains sample attack transcripts to get started:
+
+- **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
+- **exfil-ssh** — SSH private key embedded in a git commit message
+- **docker-volume-wipe** — destructive sabotage via config parameter manipulation
+
+Copy them into your `transcripts/` directory to view them in the editor:
+
+```bash
+mkdir -p transcripts/examples
+cp examples/*.jsonl examples/*.meta.json transcripts/examples/
+```
+
 ## Features
 
 ### Transcript Editing
