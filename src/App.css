@@ -2170,6 +2170,48 @@ main {
   border: 1px solid var(--border-subtle);
 }
 
+/* Placeholder: not-yet-run metric — dashed circle with play icon */
+.monitor-score-placeholder {
+  border: 2px dashed var(--border-default);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.monitor-score-placeholder .placeholder-play-icon {
+  opacity: 0.3;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.monitor-score-placeholder:hover {
+  border-color: var(--purple-400);
+  background: rgba(167, 139, 250, 0.08);
+  color: var(--purple-400);
+  transform: scale(1.12);
+}
+
+.monitor-score-placeholder:hover .placeholder-play-icon {
+  opacity: 1;
+}
+
+.monitor-score-placeholder:hover + .monitor-score-item-label {
+  color: var(--purple-400);
+}
+
+/* Spinner: metric currently being evaluated */
+.monitor-score-spinner {
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.monitor-spinner-arc {
+  animation: monitor-spinner-rotate 1s linear infinite;
+}
+
+@keyframes monitor-spinner-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .monitor-score-item.selected .monitor-score-circle {
   box-shadow: 0 0 6px 0px currentColor;
 }

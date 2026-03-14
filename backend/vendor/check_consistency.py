@@ -338,9 +338,27 @@ def _handle_read(
     # Get the result text
     result = tool_results.get(tool_id)
     if not result:
+        _add_warning(
+            warnings,
+            suppressions,
+            "missing-tool-result",
+            file_path,
+            msg_idx,
+            f"Read of {file_path} at message {msg_idx + 1} has no matching tool_result (tool_use_id: {tool_id})",
+            tool_id,
+        )
         return
     result_text = get_result_text(result)
     if result_text is None:
+        _add_warning(
+            warnings,
+            suppressions,
+            "empty-tool-result",
+            file_path,
+            msg_idx,
+            f"Read of {file_path} at message {msg_idx + 1} has empty tool_result content",
+            tool_id,
+        )
         return
 
     # Check if result indicates an error (file not found, etc.)
@@ -430,8 +448,7 @@ def _handle_read(
     elif vfile.status == FileStatus.KNOWN:
         # Compare with expected state
         expected = vfile.contents
-        if expected is None:
-            return
+        assert expected is not None, f"Bug: KNOWN file {file_path} has None contents"
 
         # If we have offset/limit on this read, extract the matching range from expected
         if offset is not None or limit is not None:
@@ -502,14 +519,28 @@ def _handle_edit(
         return
 
     # Check if the edit result indicates success (don't update state on failed edits).
-    # Match the known success prefixes rather than searching for error substrings,
-    # since the result includes a cat -n snippet of file contents that could contain
-    # arbitrary text (e.g. code with "FAILED" or "Error" in string literals).
+    # Match known success/failure prefixes explicitly — warn on unrecognized results
+    # rather than silently skipping them (which causes confusing downstream read-mismatches).
+    _EDIT_SUCCESS_PREFIXES = ("The file", "Updated", "Successfully")
+    _EDIT_FAILURE_PREFIXES = ("Error:", "FAILED", "No match found", "old_string not found", "<tool_use_error>")
     result = tool_results.get(tool_id)
     if result:
         result_text = get_result_text(result)
-        if result_text and not (result_text.startswith("The file") or result_text.startswith("Updated")):
-            return
+        if result_text:
+            if any(result_text.startswith(p) for p in _EDIT_FAILURE_PREFIXES):
+                # Known failure — don't update file state
+                return
+            if not any(result_text.startswith(p) for p in _EDIT_SUCCESS_PREFIXES):
+                # Unrecognized result — warn and treat as success (apply the edit)
+                _add_warning(
+                    warnings,
+                    suppressions,
+                    "edit-unrecognized-result",
+                    file_path,
+                    msg_idx,
+                    f"Edit of {file_path} at message {msg_idx + 1} has unrecognized result: '{truncate(result_text, 60)}'",
+                    result_text[:60],
+                )
 
     vfile = files.get(file_path)
 
@@ -620,6 +651,9 @@ def format_warning_terminal(w: ConsistencyWarning) -> str:
         "edit-old-missing": "\033[31m",  # red
         "assertion-violated": "\033[31m",  # red
         "unexpected-system-reminder": "\033[31m",  # red
+        "edit-unrecognized-result": "\033[33m",  # yellow
+        "missing-tool-result": "\033[31m",  # red
+        "empty-tool-result": "\033[33m",  # yellow
     }
     color = type_colors.get(w.type, "\033[33m")
     reset = "\033[0m"

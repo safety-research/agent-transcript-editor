@@ -14,6 +14,9 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
+# Install system deps (git needed for trusted-monitor pip dependency)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install Python deps
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -258,7 +258,7 @@ async function _pollEvalLoop(fileKey: FileKey, evalId: string, snapshotHash: str
         break;
       }
       if (status.status === 'error' && !status.scores) {
-        currentStore.setMonitorEval(fileKey, { status: 'error', errorMessage: status.error_message ?? 'Evaluation failed' });
+        currentStore.setMonitorEval(fileKey, { status: 'error', errorMessage: status.error_message ?? 'Evaluation failed', runningMetrics: null });
       } else {
         // Build per-metric error details for failed metrics
         const metricErrors: string[] = [];
@@ -271,7 +271,7 @@ async function _pollEvalLoop(fileKey: FileKey, evalId: string, snapshotHash: str
         const errorMessage = metricErrors.length > 0
           ? metricErrors.join('\n')
           : status.error_message;
-        currentStore.setMonitorEval(fileKey, { status: 'done', transcriptHash: snapshotHash, errorMessage });
+        currentStore.setMonitorEval(fileKey, { status: 'done', transcriptHash: snapshotHash, errorMessage, runningMetrics: null });
       }
       break;
     }
@@ -366,6 +366,17 @@ function _updateStoreFromStatus(
   const currentStore = useStore.getState();
   const existingVariants = currentStore.getFile(fileKey)?.monitorEval?.variantEvals ?? [];
   const updates = buildMonitorUpdates(status.metrics, existingVariants);
+
+  // Derive which metrics are currently running/queued from the backend's per-metric status
+  const running: string[] = [];
+  for (const [key, metric] of Object.entries(status.metrics)) {
+    if (metric.status === 'queued' || metric.status === 'running') {
+      // Normalize "suspiciousness:variant_name" → "suspiciousness"
+      const metricName = key.includes(':') ? key.split(':')[0] : key;
+      if (!running.includes(metricName)) running.push(metricName);
+    }
+  }
+  updates.runningMetrics = running.length > 0 ? running : null;
 
   if (Object.keys(updates).length > 0) {
     currentStore.setMonitorEval(fileKey, updates);
