@@ -13,7 +13,7 @@ import { TranscriptSummaryBanner } from './TranscriptSummaryBanner';
 import { ClassifyTranscriptModal } from './ClassifyTranscriptModal';
 import { useAgentSession } from './llm/useAgentSession';
 import { checkApiStatus } from './llm/client';
-import { triggerMonitorEval, minimizeTranscript, fixToolIds } from './monitor';
+import { triggerMonitorEval, minimizeTranscript, fixToolIds, checkConsistency, verifyToolIds } from './monitor';
 import { showToast } from './toast';
 import { saveMessages, saveMetadata, putGlobalSettings } from './api';
 import { Sidebar } from './Sidebar';
@@ -690,11 +690,28 @@ function App() {
     saveMessages(activeFileKey, newMessages, { type: 'insert', index: index + 1 });
   };
 
-  const clear = () => {
-    if (!activeFileKey) return;
-    saveMessages(activeFileKey, []);
-    // Reset the file label
-    useStore.getState().renameFile(activeFileKey, 'Untitled');
+  const runCheck = async () => {
+    if (!messages.length) return;
+    try {
+      const [consistency, toolIdVerify] = await Promise.all([
+        checkConsistency(messages),
+        verifyToolIds(messages),
+      ]);
+      const issues: string[] = [];
+      for (const w of consistency.warnings) {
+        issues.push(`[msg ${w.message_index}] ${w.message}`);
+      }
+      for (const i of toolIdVerify.issues) {
+        issues.push(`[msg ${i.line_number}] ${i.issue}: ${i.id_value}`);
+      }
+      if (issues.length === 0) {
+        showToast('No issues found', 'success');
+      } else {
+        showToast(`${issues.length} issue(s) found:\n${issues.join('\n')}`, 'warning');
+      }
+    } catch (e) {
+      showToast(`Check failed: ${e instanceof Error ? e.message : e}`, 'warning');
+    }
   };
 
   // Search handlers
@@ -819,8 +836,8 @@ function App() {
           {backendReady === false && (
             <span className="backend-warning" title="Backend API key not configured">⚠️</span>
           )}
+          {!showEmptyState && <button onClick={runCheck} title="Check for file consistency and tool ID issues">Check</button>}
           <button onClick={() => setShowSettings(true)}>Settings</button>
-          {!showEmptyState && <button onClick={clear}>Clear</button>}
         </div>
       </header>
 
