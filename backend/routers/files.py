@@ -380,6 +380,54 @@ async def load_transcript(path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/reload/{path:path}")
+async def reload_transcript(path: str):
+    """
+    Reload a transcript from disk, discarding the in-memory session cache.
+
+    Use this after editing the .jsonl or .meta.json on disk while the file
+    is open in the editor. Refuses if an agent is currently streaming.
+    """
+    from sessions import session_manager
+
+    session = session_manager.get_session(path)
+    if not session:
+        return {"success": True, "reloaded": False, "reason": "no active session"}
+
+    try:
+        new_session = await session_manager.reload_from_disk(path)
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return {
+        "success": True,
+        "reloaded": True,
+        "message_count": len(new_session.messages) if new_session else 0,
+    }
+
+
+class CreateFileRequest(BaseModel):
+    project: str
+    name: str
+
+
+@router.post("/create")
+async def create_file(request: CreateFileRequest):
+    """Create an empty transcript file on disk."""
+    transcripts_dir = get_transcripts_dir()
+    name = _safe_jsonl_name(request.name)
+    target_dir = (transcripts_dir / request.project).resolve()
+    _check_within_transcripts(target_dir, transcripts_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / name
+
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail=f"File already exists: {name}")
+
+    file_path.touch()
+    return {"name": name, "path": str(file_path.relative_to(transcripts_dir))}
+
+
 @router.post("/save")
 async def save_transcript(request: SaveRequest):
     """

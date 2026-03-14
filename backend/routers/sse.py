@@ -57,6 +57,10 @@ def _apply_setting_side_effects(key: str, value: Any) -> None:
 
         if value not in VALID_PROMPT_MODES:
             raise ValueError(f"Invalid prompt_mode: {value}, must be one of {VALID_PROMPT_MODES}")
+    elif key == "rate_limit_enabled":
+        from rate_limit import set_enabled
+
+        set_enabled(value)
     elif key == "tpm_default":
         from rate_limit import set_limit
 

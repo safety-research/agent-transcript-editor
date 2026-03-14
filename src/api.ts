@@ -71,6 +71,7 @@ export const SETTINGS_KEY_MAP: Record<string, { target: 'settings' | 'monitor'; 
   goal_score: { target: 'monitor', key: 'goalScore' },
   auto_eval_enabled: { target: 'monitor', key: 'enabled' },
   auto_eval_on_load: { target: 'monitor', key: 'autoEvalOnLoad' },
+  rate_limit_enabled: { target: 'monitor', key: 'rateLimitEnabled' },
   tpm_default: { target: 'monitor', key: 'tpmDefault' },
   tpm_alt: { target: 'monitor', key: 'tpmAlt' },
 };
@@ -113,6 +114,21 @@ export function applyGlobalSettingsToStore(data: Record<string, unknown>): void 
  * Backend persists to disk and broadcasts via SSE (which is a no-op since store already has the value).
  * This is the ONLY way settings should be changed from the frontend.
  */
+/**
+ * Reload a transcript from disk, discarding the in-memory session cache.
+ * The backend broadcasts a session_reloaded event to all subscribers.
+ */
+export async function reloadFromDisk(fileKey: string): Promise<{ reloaded: boolean; message_count?: number }> {
+  const res = await fetch(`/api/files/reload/${encodeFileKey(fileKey)}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(detail.detail || `Reload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export function putGlobalSettings(update: Record<string, unknown>): void {
   applyGlobalSettingsToStore(update);
 

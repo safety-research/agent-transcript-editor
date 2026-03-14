@@ -280,6 +280,7 @@ function SidebarFileSection() {
   const files = useStore(s => s.files);
   const openFiles = useStore(s => s.openFiles);
   const openFile = useStore(s => s.openFile);
+  const openNewFile = useStore(s => s.openNewFile);
   const switchFile = useStore(s => s.switchFile);
   const closeFile = useStore(s => s.closeFile);
   const moveFile = useStore(s => s.moveFile);
@@ -598,17 +599,6 @@ function SidebarFileSection() {
     }
   };
 
-  const handleSave = async () => {
-    const store = useStore.getState();
-    const activeKey = store.activeFileKey;
-    if (!activeKey) return;
-    const file = store.files[activeKey];
-    if (!file || file.messages.length === 0) return;
-    const { saveMessages } = await import('./api');
-    await saveMessages(activeKey, file.messages);
-    fetchFiles();
-  };
-
   return (
     <div className="sidebar-file-section">
       <div className="sidebar-header">
@@ -616,17 +606,17 @@ function SidebarFileSection() {
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
             className="file-browser-upload"
-            onClick={handleSave}
-            title="Save current tab"
-          >
-            Save
-          </button>
-          <button
-            className="file-browser-upload"
             onClick={handleUpload}
             title="Upload transcript"
           >
             Upload
+          </button>
+          <button
+            className="sidebar-action-btn highlighted"
+            onClick={() => openNewFile(dirName)}
+            title="New file"
+          >
+            +
           </button>
         </div>
       </div>

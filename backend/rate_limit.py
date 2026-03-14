@@ -42,6 +42,9 @@ _default_limits: dict[str, int] = {
     "alt": 2_000_000,
 }
 
+# Global enable/disable — when False, acquire() is a no-op
+_enabled: bool = False
+
 # Optional callback for broadcasting rate limit wait status to UI
 # Signature: async (key_id: str, wait_seconds: float, used: int, limit: int) -> None
 _on_rate_limit_wait: Callable[[str, float, int, int], Coroutine[Any, Any, None]] | None = None
@@ -87,6 +90,10 @@ async def acquire(key_id: str = "default", cancel_event: asyncio.Event | None = 
     If cancel_event is set during the wait, raises asyncio.CancelledError.
     After the call, use `record()` to log actual input tokens consumed.
     """
+    if not _enabled:
+        yield
+        return
+
     state = _get_key_state(key_id)
     state.queued += 1
     try:
@@ -173,3 +180,12 @@ def set_limit(key_id: str, tpm: int) -> None:
     _default_limits[key_id] = tpm
     state = _get_key_state(key_id)
     state.limit_tpm = tpm
+
+
+def set_enabled(enabled: bool) -> None:
+    global _enabled
+    _enabled = enabled
+
+
+def is_enabled() -> bool:
+    return _enabled

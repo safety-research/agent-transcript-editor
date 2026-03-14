@@ -2,7 +2,7 @@
 
 This document describes how to use the transcript editor tool as well as some tips and goals for making good transcripts.
 
-If you run into issues, have ideas for the tool, or find an interesting attack, you can reach out in the following ways:
+This tool is currently a prototype! If you run into issues, have ideas for the tool, things you liked, or just find an interesting attack, you can reach out in the following ways:
 
 - **GitHub Issues**: https://github.com/safety-research/agent-transcript-editor/issues — bug reports, feature requests, questions
 - **Feedback form**: https://docs.google.com/forms/d/1IJsCevIeWm_hcWDvVt-GiRVytH1rijgDlm9dcs6Mn0o/viewform — quick feedback on your experience

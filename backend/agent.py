@@ -1099,6 +1099,33 @@ async def _execute_tool_call(
 
 # ── System Prompt Builder ────────────────────────────────────────────────
 
+# Rough char-to-token ratio; 4 chars ≈ 1 token
+_MAX_INLINE_CHARS = 200_000  # ~50K tokens
+
+
+def _maybe_inline_transcript(messages: list[dict[str, Any]]) -> str | None:
+    """If the transcript is small enough, return it formatted for inclusion in the system prompt."""
+    if not messages:
+        return None
+
+    import json
+
+    lines: list[str] = []
+    for i, msg in enumerate(messages, 1):
+        lines.append(f"[{i}] {json.dumps(msg, ensure_ascii=False)}")
+    serialized = "\n".join(lines)
+
+    if len(serialized) > _MAX_INLINE_CHARS:
+        return None
+
+    return (
+        f"\n\n--- FULL TRANSCRIPT (included because it fits in context) ---\n"
+        f"Each line is [message_number] followed by the raw JSON. "
+        f"You already have the full transcript below, so you can skip get_messages for orientation "
+        f"and go straight to editing. You still need get_messages to read specific blocks in detail.\n\n"
+        f"{serialized}"
+    )
+
 
 def _build_system_prompt(
     session: Session, session_manager: SessionManager
@@ -1135,6 +1162,12 @@ def _build_system_prompt(
 
     preamble = _load_preamble(session, session_manager)
     full_system = f"{preamble}\n\n---\n\n{system_prompt}\n\nCurrent transcript context:\n{context}"
+
+    # If the transcript is small enough, include it inline so the agent
+    # doesn't need to call get_messages to orient itself.
+    inline_transcript = _maybe_inline_transcript(current_messages)
+    if inline_transcript:
+        full_system += inline_transcript
 
     # Prepare cached static content — system prompt + tool definitions get
     # cache_control breakpoints so Anthropic caches them across iterations.

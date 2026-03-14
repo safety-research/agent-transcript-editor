@@ -15,7 +15,7 @@ import { useAgentSession } from './llm/useAgentSession';
 import { checkApiStatus } from './llm/client';
 import { triggerMonitorEval, minimizeTranscript, fixToolIds, checkConsistency, verifyToolIds } from './monitor';
 import { showToast } from './toast';
-import { saveMessages, saveMetadata, putGlobalSettings } from './api';
+import { saveMessages, saveMetadata, putGlobalSettings, reloadFromDisk } from './api';
 import { Sidebar } from './Sidebar';
 import { LengthExtensionDialog } from './LengthExtensionDialog';
 import './App.css';
@@ -139,6 +139,7 @@ function App() {
   const showConfidence = useStore(s => s.settings.monitor.evalConfidence);
   const showRealism = useStore(s => s.settings.monitor.evalRealism);
   const promptVariants = useStore(s => s.settings.monitor.promptVariants);
+  const rateLimitEnabled = useStore(s => s.settings.monitor.rateLimitEnabled);
   const activeProjectDirName = useStore(s => {
     const p = s.projects.find(pr => pr.id === s.activeProjectId);
     return p?.dirName ?? 'default';
@@ -170,6 +171,7 @@ function App() {
     realism: null,
     transcriptHash: null,
     errorMessage: null,
+    runningMetrics: null,
   };
 
   // ── Local UI state ────────────────────────────────────────────────
@@ -302,6 +304,13 @@ function App() {
         setShowJumpInput(s => !s);
         setJumpValue('');
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        const fk = useStore.getState().activeFileKey;
+        if (fk) {
+          reloadFromDisk(fk).catch(err => showToast(`Reload failed: ${err.message}`, 'warning'));
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -356,6 +365,7 @@ function App() {
           goalScore: gs.goal_score as number,
           enabled: gs.auto_eval_enabled as boolean,
           autoEvalOnLoad: gs.auto_eval_on_load as boolean,
+          rateLimitEnabled: gs.rate_limit_enabled as boolean,
           tpmDefault: gs.tpm_default as number,
           tpmAlt: gs.tpm_alt as number,
         });
@@ -767,7 +777,8 @@ function App() {
   // ── Empty state ───────────────────────────────────────────────
   const showEmptyState = !activeFile || (messages.length === 0 && !llmSession.isStreaming && !fileLoading);
   // Detect format error: file is hydrated (loaded from disk) but normalization produced 0 messages
-  const hasFormatError = activeFile && fileHydrated && !fileLoading && messages.length === 0 && !llmSession.isStreaming && activeFile.mode === 'edit';
+  // Don't show if the file was genuinely empty on disk (new file or empty .jsonl)
+  const hasFormatError = activeFile && fileHydrated && !fileLoading && messages.length === 0 && !llmSession.isStreaming && activeFile.mode === 'edit' && !activeFile.diskWasEmpty;
 
   const dropzoneContent = (
     <div
@@ -822,7 +833,7 @@ function App() {
               <button onClick={() => setShowLengthExtension(true)}>Extend</button>
             </>
           )}
-          {rateLimitStatus && (
+          {rateLimitStatus && rateLimitEnabled && (
             <span
               className="api-workers-badge"
               style={Object.values(rateLimitStatus).some(v => v.used_tpm > 0 || v.queued > 0) ? undefined : { opacity: 0.5 }}

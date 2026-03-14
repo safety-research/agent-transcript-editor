@@ -176,6 +176,8 @@ export interface FileState {
   loading: boolean;
   /** True once messages + metadata have been loaded from disk */
   hydrated: boolean;
+  /** True if the file didn't exist on disk or had 0 messages — suppresses format error */
+  diskWasEmpty: boolean;
 }
 
 export interface Project {
@@ -243,6 +245,7 @@ function createFileState(overrides: Partial<FileState> & { fileKey: FileKey }): 
     consistencySuppressions: [],
     loading: false,
     hydrated: false,
+    diskWasEmpty: false,
     ...rest,
   };
 }
@@ -281,6 +284,7 @@ export interface MonitorSettings {
   nEvals: number;
   nEvalsOtherMetrics: number;
   promptVariants: string[];
+  rateLimitEnabled: boolean;
   tpmDefault: number;
   tpmAlt: number;
   goalScore: number;
@@ -395,16 +399,17 @@ export const useStore = create<WorkspaceState>()(
       settings: {
         lockFirstMessage: false,
         childLock: false,
-        promptMode: 'creative',
+        promptMode: 'faithful',
 
         llmModel: 'claude-opus-4-6',
         llmApiKeyId: 'default',
         monitor: {
           enabled: false,
           autoEvalOnLoad: false,
-          nEvals: 5,
+          nEvals: 1,
           nEvalsOtherMetrics: 1,
           promptVariants: ['control_arena'],
+          rateLimitEnabled: false,
           tpmDefault: 2_000_000,
           tpmAlt: 2_000_000,
           goalScore: 10,
@@ -509,6 +514,7 @@ export const useStore = create<WorkspaceState>()(
         const fileState = createFileState({
           fileKey,
           fileName,
+          diskWasEmpty: true,
           ...fileOverrides,
         });
 
@@ -520,6 +526,14 @@ export const useStore = create<WorkspaceState>()(
             activeProjectId: project?.id ?? s.activeProjectId,
           } : {}),
         }));
+
+        // Persist empty file to disk so it shows up in the sidebar file list
+        fetch(`/api/files/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: projectDirName, name: fileName }),
+        }).catch(() => {}); // best-effort — sidebar poll will pick it up
+
         return fileKey;
       },
 
@@ -770,7 +784,7 @@ export const useStore = create<WorkspaceState>()(
               set(s => ({
                 files: {
                   ...s.files,
-                  [fileKey]: s.files[fileKey] ? { ...s.files[fileKey], loading: false, hydrated: true } : s.files[fileKey],
+                  [fileKey]: s.files[fileKey] ? { ...s.files[fileKey], loading: false, hydrated: true, diskWasEmpty: true } : s.files[fileKey],
                 },
               }));
               return;
@@ -799,6 +813,8 @@ export const useStore = create<WorkspaceState>()(
               messages,
               loading: false,
               hydrated: true,
+              // If the backend returned 0 messages (empty file), suppress format error
+              diskWasEmpty: data.messages.length === 0,
               ...(metadata?.outcome !== undefined ? { outcome: metadata.outcome } : {}),
               ...(metadata?.scenario !== undefined ? { scenario: metadata.scenario } : {}),
               ...(metadata?.mechanism !== undefined ? { mechanism: metadata.mechanism as unknown as MechanismDict } : {}),
@@ -918,7 +934,7 @@ export const useStore = create<WorkspaceState>()(
     }),
     {
       name: 'agent-transcript-editor-workspace',
-      version: 21,
+      version: 22,
       storage: idbStorage,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1242,7 +1258,7 @@ export const useStore = create<WorkspaceState>()(
           // ── v18: Add promptMode to settings ──
           const s = state as { settings?: Record<string, unknown> };
           if (s.settings) {
-            if (s.settings.promptMode === undefined) s.settings.promptMode = 'creative';
+            if (s.settings.promptMode === undefined) s.settings.promptMode = 'faithful';
           }
         }
         if (version <= 18) {
@@ -1271,11 +1287,27 @@ export const useStore = create<WorkspaceState>()(
           // Clear stale settings so they're fetched from backend on mount
           delete (state as Record<string, unknown>).settings;
         }
+        if (version <= 21) {
+          // ── v22: Stop persisting activeProjectId (derived from activeFileKey on hydration) ──
+          delete (state as Record<string, unknown>).activeProjectId;
+        }
         return state as unknown as WorkspaceState;
       },
       // On hydration, fix monitor eval state consistency + migrate old data to sidecar
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+
+        // Projects aren't persisted (backend is source of truth), so derive
+        // activeProjectId from the active file's project, falling back to default.
+        if (state.activeFileKey) {
+          const { projectDirName } = parseFileKey(state.activeFileKey);
+          const project = state.projects.find(p => p.dirName === projectDirName)
+            ?? state.projects.find(p => p.dirName === 'default');
+          if (project) state.activeProjectId = project.id;
+        } else {
+          const defaultProject = state.projects.find(p => p.dirName === 'default');
+          if (defaultProject) state.activeProjectId = defaultProject.id;
+        }
 
         // Ensure promptVariants exists (migration may not have run if async hydration)
         const mon = state.settings.monitor as unknown as Record<string, unknown>;
@@ -1375,7 +1407,6 @@ export const useStore = create<WorkspaceState>()(
         ),
         openFiles: state.openFiles,
         activeFileKey: state.activeFileKey,
-        activeProjectId: state.activeProjectId,
       } as unknown as WorkspaceState),
     }
   )

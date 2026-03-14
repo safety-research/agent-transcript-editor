@@ -100,7 +100,11 @@ export function useAgentSession({ fileKey }: UseAgentSessionOptions) {
       const type = data.type as string;
 
       switch (type) {
+        case "session_reloaded":
         case "session_state": {
+          if (type === "session_reloaded") {
+            showToast("Reloaded from disk", "info");
+          }
           // Full state sync — map to LLMSession + store
           const blocks = (data.content_blocks as StreamingBlock[]) ?? [];
           contentBlocksRef.current = blocks;
@@ -190,6 +194,7 @@ export function useAgentSession({ fileKey }: UseAgentSessionOptions) {
               goalScore: data.goal_score as number,
               enabled: data.auto_eval_enabled as boolean,
               autoEvalOnLoad: data.auto_eval_on_load as boolean,
+              rateLimitEnabled: data.rate_limit_enabled as boolean,
               tpmDefault: data.tpm_default as number,
               tpmAlt: data.tpm_alt as number,
             });
