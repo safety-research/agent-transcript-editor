@@ -10,7 +10,8 @@ services:
       - ./CREATIVE.md:/app/CREATIVE.md
       - ./FAITHFUL.md:/app/FAITHFUL.md
     env_file:
-      - backend/.env
+      - path: backend/.env
+        required: false
     environment:
       - HOST=0.0.0.0
       - PORT=8000
