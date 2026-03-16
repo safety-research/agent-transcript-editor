@@ -3,8 +3,10 @@ LLM Router - API key management and utility endpoints.
 """
 
 import os
+from pathlib import Path
 
 import anthropic
+from dotenv import dotenv_values
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -12,28 +14,47 @@ router = APIRouter()
 
 from sessions import DEFAULT_MODEL  # noqa: E402
 
+# Path to .env file — re-read on each key resolution so users can update it
+# without restarting the server (especially useful in Docker).
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
 
 def resolve_api_key(api_key_id: str = "default", *, required: bool = True) -> str | None:
     """Resolve Anthropic API key by ID.
+
+    Checks process environment first, then re-reads backend/.env file.
+    This allows users to update the .env file after the server has started.
 
     Args:
         api_key_id: "default" or "alt".
         required: If True, raises HTTPException when key is missing.
                   If False, returns None for default key (lets SDK use its own default).
     """
-    if api_key_id == "alt":
-        key = os.getenv("ANTHROPIC_API_KEY_ALT")
-        if not key:
+    env_var = "ANTHROPIC_API_KEY_ALT" if api_key_id == "alt" else "ANTHROPIC_API_KEY"
+
+    # Check process environment first (set via docker-compose env_file or export)
+    key = os.getenv(env_var)
+
+    # Fall back to re-reading .env file (handles post-startup edits)
+    if not key and _ENV_FILE.exists():
+        file_vals = dotenv_values(_ENV_FILE)
+        key = file_vals.get(env_var)
+        # Ignore placeholder values from .env.example
+        if key and key.startswith("sk-ant-..."):
+            key = None
+        if key:
+            # Promote to process env so subsequent calls are fast
+            os.environ[env_var] = key
+
+    if not key and required:
+        if api_key_id == "alt":
             raise HTTPException(
                 status_code=400,
                 detail="ANTHROPIC_API_KEY_ALT not configured in backend .env",
             )
-        return key
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key and required:
         raise HTTPException(
             status_code=500,
-            detail="ANTHROPIC_API_KEY not configured. Set it in .env file.",
+            detail="ANTHROPIC_API_KEY not configured. Set it in backend/.env and the server will pick it up automatically.",
         )
     return key or None
 

@@ -66,12 +66,29 @@ git clone https://github.com/safety-research/agent-transcript-editor.git
 cd agent-transcript-editor
 cp backend/.env.example backend/.env
 # Edit backend/.env — add your ANTHROPIC_API_KEY
+```
+
+**Important:** Set your API key in `backend/.env` **before** starting the server. The backend reads this file on startup.
+
+#### Docker (recommended)
+
+```bash
 docker compose up
 ```
 
-Open http://localhost:5173.
+The frontend runs on http://localhost:5173 and the backend API on http://localhost:8000.
 
-If you prefer running without Docker, use `./start.sh` instead (requires Python 3.11+ and Node 18+).
+If you update `backend/.env` after starting, restart the backend: `docker compose restart backend`.
+
+#### Without Docker
+
+Requires Python 3.11+ and Node 18+.
+
+```bash
+./start.sh
+```
+
+The backend will automatically pick up `.env` changes without a restart.
 
 ### Workflow
 

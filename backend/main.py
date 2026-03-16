@@ -105,8 +105,11 @@ app.include_router(sse.router, prefix="/api/session", tags=["Session"])
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint with diagnostics for debugging setup issues."""
-    has_api_key = bool(os.getenv("ANTHROPIC_API_KEY"))
-    has_alt_key = bool(os.getenv("ANTHROPIC_API_KEY_ALT"))
+    from routers.llm import resolve_api_key
+
+    # Use resolve_api_key to also check .env file (not just process env)
+    has_api_key = bool(resolve_api_key("default", required=False))
+    has_alt_key = bool(resolve_api_key("alt", required=False))
 
     # Check trusted-monitor availability
     monitor_available = False
