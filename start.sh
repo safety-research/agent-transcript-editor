@@ -32,12 +32,14 @@ if [ ! -d backend/venv ]; then
     echo -e "${GREEN}✓  Installed Python dependencies${NC}"
 fi
 
-# Check for node_modules
+# Install npm dependencies (always run to ensure devDependencies like vite are present)
 if [ ! -d node_modules ]; then
     echo -e "${BLUE}►  Installing npm dependencies...${NC}"
-    npm install --silent
-    echo -e "${GREEN}✓  Installed npm dependencies${NC}"
+else
+    echo -e "${BLUE}►  Checking npm dependencies...${NC}"
 fi
+npm install || { echo -e "${RED}✗  npm install failed${NC}"; exit 1; }
+echo -e "${GREEN}✓  npm dependencies ready${NC}"
 
 echo ""
 echo -e "${GREEN}►  Starting backend on http://localhost:8000${NC}"
