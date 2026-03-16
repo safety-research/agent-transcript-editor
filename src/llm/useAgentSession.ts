@@ -172,12 +172,36 @@ export function useAgentSession({ fileKey }: UseAgentSessionOptions) {
 
           // Sync monitor eval from session state (if eval was running/done on backend)
           if (data.monitor_eval_status && data.monitor_eval_status !== "idle") {
+            const evalStatus = (data.monitor_eval_status as string) === "error" ? "error" as const :
+                      (data.monitor_eval_status as string) === "done" ? "done" as const : "running" as const;
+            const evalId = data.monitor_eval_id as string | null;
             store.setMonitorEval(fk, {
-              evalId: data.monitor_eval_id as string | null,
-              status: (data.monitor_eval_status as string) === "error" ? "error" :
-                      (data.monitor_eval_status as string) === "done" ? "done" : "running",
+              evalId,
+              status: evalStatus,
               errorMessage: (data.monitor_eval_error as string) ?? null,
             });
+
+            // Apply partial metric progress if the backend sent it (running eval)
+            if (data.monitor_eval_metrics && evalStatus === "running") {
+              const metrics = data.monitor_eval_metrics as Record<string, Record<string, unknown>>;
+              const existingVariants = store.getFile(fk)?.monitorEval?.variantEvals ?? [];
+              const updates = buildMonitorUpdates(metrics, existingVariants);
+              // Derive running metrics
+              const running: string[] = [];
+              for (const [key, metric] of Object.entries(metrics)) {
+                if (metric.status === "queued" || metric.status === "running") {
+                  const metricName = key.includes(":") ? key.split(":")[0] : key;
+                  if (!running.includes(metricName)) running.push(metricName);
+                }
+              }
+              updates.runningMetrics = running.length > 0 ? running : null;
+              store.setMonitorEval(fk, updates);
+            }
+
+            // Resume polling for running evals (e.g. after page refresh)
+            if (evalStatus === "running" && evalId) {
+              pollExistingEval(fk, evalId);
+            }
           }
           // Sync all settings from backend session (authoritative source of truth)
           if (data.n_evals !== undefined) {

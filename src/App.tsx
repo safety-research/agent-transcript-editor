@@ -1063,6 +1063,7 @@ function App() {
                   onRerunMetric={(metric, variantOverrides) => activeFileKey && triggerMonitorEval(activeFileKey, [metric], true, variantOverrides)}
                   hasMessages={messages.length > 0}
                   hasOutcome={!!(activeFile?.outcome)}
+                  hasScenario={!!(activeFile?.scenario)}
                   hasMechanism={!!(activeFile?.mechanism && Object.keys(activeFile.mechanism).length > 0)}
                   showEgregiousness={showEgregiousness}
                   showIncriminating={showIncriminating}
