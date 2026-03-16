@@ -662,7 +662,26 @@ class SessionManager:
 
     def get_session_state(self, session: Session) -> dict[str, Any]:
         """Build full session state for a newly connected client."""
-        return {
+        # Check for in-flight evaluation that may have survived a session reload
+        eval_id = session.monitor_eval_id
+        eval_status = session.monitor_eval_status
+        eval_scores = session.monitor_eval_scores
+        eval_error = session.monitor_eval_error
+        active_eval_metrics = None
+
+        # If the session thinks it's idle, check _active_evals for a running eval
+        # (happens after session reload from disk while eval continues in background)
+        if eval_status == "idle" or eval_id is None:
+            from routers.monitor import get_active_eval
+            active = get_active_eval(session.file_key)
+            if active:
+                eval_id = active["eval_id"]
+                eval_status = "running"
+                eval_scores = active.get("scores", {})
+                eval_error = None
+                active_eval_metrics = active.get("metrics", {})
+
+        state = {
             "type": "session_state",
             "file_key": session.file_key,
             "message_count": len(session.messages),
@@ -683,11 +702,14 @@ class SessionManager:
             "last_error": session.last_error,
             # Global settings (from SessionManager) — merged from schema
             **self.get_global_settings(),
-            "monitor_eval_id": session.monitor_eval_id,
-            "monitor_eval_status": session.monitor_eval_status,
-            "monitor_eval_scores": session.monitor_eval_scores,
-            "monitor_eval_error": session.monitor_eval_error,
+            "monitor_eval_id": eval_id,
+            "monitor_eval_status": eval_status,
+            "monitor_eval_scores": eval_scores,
+            "monitor_eval_error": eval_error,
         }
+        if active_eval_metrics is not None:
+            state["monitor_eval_metrics"] = active_eval_metrics
+        return state
 
     def get_global_settings(self) -> dict[str, Any]:
         """Return all global settings as a dict (keys match GlobalSettingsBody fields)."""

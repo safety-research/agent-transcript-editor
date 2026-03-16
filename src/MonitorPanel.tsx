@@ -11,6 +11,7 @@ interface Props {
   onRerunMetric: (metric: string, variantOverrides?: string[]) => void;
   hasMessages: boolean;
   hasOutcome: boolean;
+  hasScenario: boolean;
   hasMechanism: boolean;
   showEgregiousness: boolean;
   showIncriminating: boolean;
@@ -114,19 +115,21 @@ function ScoreCircle({ score, size = 88, label, secondary, inverted }: {
   );
 }
 
-function PlaceholderCircle({ size = 44, label, onClick }: {
+function PlaceholderCircle({ size = 44, label, onClick, disabled, disabledReason }: {
   size?: number;
   label?: string;
   onClick: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const iconSize = size <= 48 ? 12 : 18;
   return (
     <div className="monitor-score-circle-wrap">
       <div
-        className="monitor-score-circle monitor-score-placeholder"
+        className={`monitor-score-circle monitor-score-placeholder${disabled ? ' placeholder-disabled' : ''}`}
         style={{ width: size, height: size }}
-        onClick={onClick}
-        title={`Run ${label} evaluation`}
+        onClick={disabled ? undefined : onClick}
+        title={disabled ? disabledReason : `Run ${label} evaluation`}
       >
         <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" className="placeholder-play-icon">
           <polygon points="8,5 20,12 8,19" fill="currentColor" />
@@ -345,6 +348,7 @@ export function MonitorPanel({
   onRerunMetric,
   hasMessages,
   hasOutcome,
+  hasScenario,
   hasMechanism,
   showEgregiousness,
   showIncriminating,
@@ -358,14 +362,7 @@ export function MonitorPanel({
   const isError = monitorEval.status === 'error';
   const hasMultipleMetrics = showEgregiousness || showIncriminating || showEffectiveness || showConfidence || showRealism;
 
-  // Check if any scores have arrived (even while still running)
-  const hasAnyScore = monitorEval.score !== null ||
-    monitorEval.egregiousness?.score != null ||
-    monitorEval.incriminating?.score != null ||
-    monitorEval.effectiveness?.score != null ||
-    monitorEval.confidence?.score != null ||
-    monitorEval.realism?.score != null;
-  const showScores = (isDone || isRunning) && hasAnyScore;
+  const showScores = isDone || isRunning;
 
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('suspiciousness');
   // Track which variant is selected for the suspiciousness detail view
@@ -450,10 +447,12 @@ export function MonitorPanel({
     score: number | null | undefined,
     canRun: boolean,
     inverted?: boolean,
+    missingFields?: string[],
   ) => {
     const hasScore = score !== null && score !== undefined;
     const metricRunning = isMetricRunning(metric);
-    if (!hasScore && !metricRunning && !canRun) return null;
+    const showDisabled = !canRun && missingFields && missingFields.length > 0;
+    if (!hasScore && !metricRunning && !canRun && !showDisabled) return null;
 
     return (
       <div
@@ -467,6 +466,8 @@ export function MonitorPanel({
           <SpinnerCircle size={44} label={label} />
         ) : canRun ? (
           <PlaceholderCircle size={44} label={label} onClick={() => onRerunMetric(metric)} />
+        ) : showDisabled ? (
+          <PlaceholderCircle size={44} label={label} onClick={() => {}} disabled disabledReason={`Requires ${missingFields.join(' and ')}`} />
         ) : null}
       </div>
     );
@@ -482,14 +483,14 @@ export function MonitorPanel({
               <div className="monitor-scores-arc">
                 {/* Top row: Incriminating, Effective, Confidence */}
                 <div className="monitor-scores-arc-top">
-                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', monitorEval.incriminating?.score, hasOutcome && hasMechanism)}
-                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', monitorEval.effectiveness?.score, hasOutcome && hasMechanism)}
-                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', monitorEval.confidence?.score, hasOutcome && hasMechanism, true)}
+                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', monitorEval.incriminating?.score, hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', monitorEval.effectiveness?.score, hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', monitorEval.confidence?.score, hasOutcome && hasMechanism, true, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
                 </div>
 
                 {/* Bottom row: Egregious (left), Suspicious (center), Realism (right) */}
                 <div className="monitor-scores-arc-bottom">
-                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', monitorEval.egregiousness?.score, hasOutcome)}
+                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', monitorEval.egregiousness?.score, hasOutcome && hasScenario, undefined, [!hasOutcome && 'outcome', !hasScenario && 'scenario'].filter(Boolean) as string[])}
                   <div
                     className={`monitor-score-item monitor-arc-pos-sus ${selectedMetric === 'suspiciousness' ? 'selected' : ''}`}
                     onClick={monitorEval.score !== null ? () => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); } : undefined}
@@ -575,18 +576,6 @@ export function MonitorPanel({
           </div>
         )}
 
-        {/* Running state — only show when no scores have arrived yet (spinners cover partial progress) */}
-        {isRunning && !hasAnyScore && (
-          <div className="monitor-status">
-            <div className="llm-streaming" style={{ justifyContent: 'center' }}>
-              <span className="streaming-dot" />
-              <span className="streaming-dot" />
-              <span className="streaming-dot" />
-            </div>
-            <span>Evaluating transcript...</span>
-          </div>
-        )}
-
         {/* Error state — explicit error OR done with errors but no scores */}
         {(isError || (isDone && !showScores && monitorEval.errorMessage)) && (
           <div className="monitor-status monitor-error">
@@ -638,8 +627,8 @@ export function MonitorPanel({
         </div>
       </div>
 
-      {/* Scrollable: eval results (show even while running if partial results available) */}
-      {(isDone || (isRunning && hasAnyScore)) && results.length > 0 && (
+      {/* Scrollable: eval results */}
+      {(isDone || isRunning) && results.length > 0 && (
         <div className="monitor-results">
           <EvalScoresHeader
             label={selectedMetric === 'suspiciousness' && monitorEval.variantEvals.length > 0

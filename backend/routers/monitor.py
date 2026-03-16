@@ -312,6 +312,26 @@ _active_evals: dict[str, tuple[str, str]] = {}
 _active_evals_lock = asyncio.Lock()
 
 
+def get_active_eval(file_key: str) -> dict[str, Any] | None:
+    """Return active eval info for a file, or None if no eval is running.
+
+    Used by session state to restore running eval info on reconnect.
+    """
+    entry = _active_evals.get(file_key)
+    if not entry:
+        return None
+    _, eval_id = entry
+    store = _file_eval_store.get(eval_id)
+    if not store or store["status"] not in ("queued", "running"):
+        return None
+    return {
+        "eval_id": eval_id,
+        "status": store["status"],
+        "metrics": store.get("metrics", {}),
+        "scores": store.get("scores", {}),
+    }
+
+
 def _evict_old_evals() -> None:
     """Evict oldest completed evals when store exceeds max size."""
     if len(_file_eval_store) <= _FILE_EVAL_STORE_MAX:
@@ -370,41 +390,37 @@ async def _run_file_evaluation(eval_id: str, request: EvaluateFileRequest):
                 store["metrics"][key] = {"status": "queued"}
                 metric_coros[key] = _run_single_metric("suspiciousness", transcript_jsonl, request, variant=variant)
 
-        if (
-            (override is None or "egregiousness" in override)
-            and request.eval_egregiousness
-            and request.outcome
-            and request.scenario
-        ):
-            store["metrics"]["egregiousness"] = {"status": "queued"}
-            metric_coros["egregiousness"] = _run_single_metric("egregiousness", transcript_jsonl, request)
+        if (override is None or "egregiousness" in override) and request.eval_egregiousness:
+            missing = [f for f in ["outcome", "scenario"] if not getattr(request, f)]
+            if not missing:
+                store["metrics"]["egregiousness"] = {"status": "queued"}
+                metric_coros["egregiousness"] = _run_single_metric("egregiousness", transcript_jsonl, request)
+            elif override and "egregiousness" in override:
+                store["metrics"]["egregiousness"] = {"status": "error", "error": f"Missing required fields: {', '.join(missing)}"}
 
-        if (
-            (override is None or "incriminating" in override)
-            and request.eval_incriminating
-            and request.outcome
-            and request.mechanism
-        ):
-            store["metrics"]["incriminating"] = {"status": "queued"}
-            metric_coros["incriminating"] = _run_single_metric("incriminating", transcript_jsonl, request)
+        if (override is None or "incriminating" in override) and request.eval_incriminating:
+            missing = [f for f in ["outcome", "mechanism"] if not getattr(request, f)]
+            if not missing:
+                store["metrics"]["incriminating"] = {"status": "queued"}
+                metric_coros["incriminating"] = _run_single_metric("incriminating", transcript_jsonl, request)
+            elif override and "incriminating" in override:
+                store["metrics"]["incriminating"] = {"status": "error", "error": f"Missing required fields: {', '.join(missing)}"}
 
-        if (
-            (override is None or "effectiveness" in override)
-            and request.eval_effectiveness
-            and request.outcome
-            and request.mechanism
-        ):
-            store["metrics"]["effectiveness"] = {"status": "queued"}
-            metric_coros["effectiveness"] = _run_single_metric("effectiveness", transcript_jsonl, request)
+        if (override is None or "effectiveness" in override) and request.eval_effectiveness:
+            missing = [f for f in ["outcome", "mechanism"] if not getattr(request, f)]
+            if not missing:
+                store["metrics"]["effectiveness"] = {"status": "queued"}
+                metric_coros["effectiveness"] = _run_single_metric("effectiveness", transcript_jsonl, request)
+            elif override and "effectiveness" in override:
+                store["metrics"]["effectiveness"] = {"status": "error", "error": f"Missing required fields: {', '.join(missing)}"}
 
-        if (
-            (override is None or "confidence" in override)
-            and request.eval_confidence
-            and request.outcome
-            and request.mechanism
-        ):
-            store["metrics"]["confidence"] = {"status": "queued"}
-            metric_coros["confidence"] = _run_single_metric("confidence", transcript_jsonl, request)
+        if (override is None or "confidence" in override) and request.eval_confidence:
+            missing = [f for f in ["outcome", "mechanism"] if not getattr(request, f)]
+            if not missing:
+                store["metrics"]["confidence"] = {"status": "queued"}
+                metric_coros["confidence"] = _run_single_metric("confidence", transcript_jsonl, request)
+            elif override and "confidence" in override:
+                store["metrics"]["confidence"] = {"status": "error", "error": f"Missing required fields: {', '.join(missing)}"}
 
         if (override is None or "realism" in override) and request.eval_realism:
             store["metrics"]["realism"] = {"status": "queued"}

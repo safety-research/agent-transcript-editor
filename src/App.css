@@ -2198,6 +2198,23 @@ main {
   color: var(--purple-400);
 }
 
+.monitor-score-placeholder.placeholder-disabled {
+  border-color: var(--border-default);
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.monitor-score-placeholder.placeholder-disabled:hover {
+  border-color: var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  transform: none;
+}
+
+.monitor-score-placeholder.placeholder-disabled:hover .placeholder-play-icon {
+  opacity: 0.3;
+}
+
 /* Spinner: metric currently being evaluated */
 .monitor-score-spinner {
   background: rgba(167, 139, 250, 0.08);
