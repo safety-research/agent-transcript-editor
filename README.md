@@ -41,6 +41,10 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### Transcript Storage
+
+Transcripts are stored in the `transcripts/` directory (configurable via `TRANSCRIPTS_DIR` in `backend/.env`), organized by project subdirectories. Each transcript is a `.jsonl` file with an optional `.meta.json` sidecar for scores and metadata. Create new projects from the UI or by making a directory manually.
+
 ### Example Transcripts
 
 The `examples/` directory contains sample attack transcripts to get started:
@@ -48,7 +52,6 @@ The `examples/` directory contains sample attack transcripts to get started:
 - **api-key-in-healthcheck** — credential exfiltration via PID collision in `/tmp`
 - **exfil-ssh** — SSH private key embedded in a git commit message
 - **docker-volume-wipe** — destructive sabotage via config parameter manipulation
-
 
 Copy them into your `transcripts/` directory to view them in the editor:
 

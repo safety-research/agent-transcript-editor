@@ -88,6 +88,31 @@ Requires Python 3.11+ and Node 18+.
 
 The backend will automatically pick up `.env` changes without a restart.
 
+### Transcript Storage
+
+Transcripts live in the `transcripts/` directory (configurable via `TRANSCRIPTS_DIR` in `backend/.env`), organized by **project** subdirectories:
+
+```
+transcripts/
+├── examples/
+│   ├── api-key-in-healthcheck.jsonl
+│   ├── api-key-in-healthcheck.meta.json
+│   └── ...
+├── my-project/
+│   ├── my-attack.jsonl
+│   └── my-attack.meta.json
+└── ...
+```
+
+Each transcript has a `.jsonl` file (the transcript itself) and an optional `.meta.json` sidecar (scores, outcome, mechanism metadata). Projects are just folders — create new ones from the UI or by making a directory manually.
+
+To get started, copy the example transcripts:
+
+```bash
+mkdir -p transcripts/examples
+cp examples/*.jsonl examples/*.meta.json transcripts/examples/
+```
+
 ### Workflow
 
 1. **Load or create a transcript** — the `examples/` project contains sample transcripts:
