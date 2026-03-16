@@ -7,11 +7,11 @@ The transcript editor works with **minimal JSONL** format — one JSON object pe
 Each line is a JSON object with:
 
 ```json
-{"role": "user"|"assistant", "content": <string or array>, "cwd": "/path/to/workdir"}
+{"role": "user"|"assistant", "content": [<content blocks>], "cwd": "/path/to/workdir"}
 ```
 
 - **role**: `"user"` or `"assistant"`
-- **content**: Either a plain string or an array of content blocks
+- **content**: An array of content blocks (never a plain string — use `[{"type": "text", "text": "..."}]` instead)
 - **cwd**: (optional) The working directory at the time of this message
 
 ## Content Blocks

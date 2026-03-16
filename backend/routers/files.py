@@ -68,7 +68,7 @@ class TranscriptInfo(BaseModel):
     size: int
     modified: str
     message_count: int | None = None
-    scores: dict[str, float] | None = None
+    scores: dict[str, float | None] | None = None
     has_metadata: bool = False
     agent_running: bool = False
     eval_status: str | None = None  # "running", "done", "error", or None
@@ -100,7 +100,7 @@ class MetaRequest(BaseModel):
     scenario: str | None = None
     mechanism: dict[str, str] | None = None
     summary: dict[str, str] | None = None
-    scores: dict[str, float] | None = None
+    scores: dict[str, float | None] | None = None
     evals: dict[str, Any] | None = None  # Full eval results per metric
     transcript_hash: str | None = None
     consistency_suppressions: list[dict[str, str]] | None = None
