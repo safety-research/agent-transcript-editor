@@ -9,6 +9,7 @@ services:
       - ./transcripts:/app/transcripts
       - ./CREATIVE.md:/app/CREATIVE.md
       - ./FAITHFUL.md:/app/FAITHFUL.md
+      - ./backend/.env:/app/backend/.env:ro
     env_file:
       - path: backend/.env
         required: false
