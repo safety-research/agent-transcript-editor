@@ -780,8 +780,24 @@ async def _evaluate_monitor_score(
         # Build result from aggregated scores
         store = _file_eval_store[eval_id]
         collected: dict[str, Any] = {"status": store["status"]}
-        for metric_name, score_val in store.get("scores", {}).items():
-            if metric_name.startswith("suspiciousness_"):
+        all_scores = store.get("scores", {})
+
+        # Compute global suspiciousness as max of variant scores
+        variant_scores = {k: v for k, v in all_scores.items() if k.startswith("suspiciousness_")}
+        if variant_scores:
+            max_variant_key = max(variant_scores, key=lambda k: variant_scores[k])
+            max_score = variant_scores[max_variant_key]
+            # Get reasoning from the max variant's eval data
+            vname = max_variant_key.removeprefix("suspiciousness_")
+            susp_evals = store.get("evals", {}).get("suspiciousness", {})
+            variant_eval = susp_evals.get("variants", {}).get(vname, {})
+            collected["suspiciousness"] = {
+                "score": max_score,
+                "reasoning": variant_eval.get("reasoning"),
+            }
+
+        for metric_name, score_val in all_scores.items():
+            if metric_name.startswith("suspiciousness"):
                 continue
             eval_data = store.get("evals", {}).get(metric_name, {})
             collected[metric_name] = {

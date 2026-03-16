@@ -497,16 +497,10 @@ async def _run_file_evaluation(eval_id: str, request: EvaluateFileRequest):
                             "results": vdata.get("results", []),
                         }
 
-            # Max score across variants
-            max_variant = max(variant_data.items(), key=lambda kv: kv[1].get("mean_score", -1))
-            max_score = max_variant[1]["mean_score"]
-            scores["suspiciousness"] = max_score
+            # Store per-variant scores (global max is computed on read)
             for vname, vdata in variant_data.items():
                 scores[f"suspiciousness_{vname}"] = vdata["mean_score"]
             evals["suspiciousness"] = {
-                "score": max_score,
-                "reasoning": max_variant[1].get("reasoning"),
-                "results": max_variant[1].get("results", []),
                 "variants": {
                     vname: {
                         "score": vdata["mean_score"],
@@ -729,8 +723,9 @@ def _check_cached_scores(request: EvaluateFileRequest) -> dict[str, Any] | None:
     evals = cached["evals"]
 
     # Check metric completeness (business logic stays here, not in sidecar)
-    if "suspiciousness" not in scores:
-        logger.info("Cache miss: no suspiciousness score in meta for %s/%s", request.project, request.file_name)
+    has_any_variant = any(k.startswith("suspiciousness_") for k in scores)
+    if not has_any_variant:
+        logger.info("Cache miss: no suspiciousness variant scores in meta for %s/%s", request.project, request.file_name)
         return None
 
     # Check all requested prompt variants have been evaluated

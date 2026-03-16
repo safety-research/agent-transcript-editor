@@ -83,6 +83,19 @@ interface SidecarEvals {
   realism?: RealismEval;
 }
 
+/** Compute max suspiciousness from per-variant score keys (suspiciousness_*). */
+function computeMaxSuspiciousness(scores: Record<string, number>): { score: number; variant: string } | null {
+  let maxScore = -1;
+  let maxVariant = '';
+  for (const [key, value] of Object.entries(scores)) {
+    if (key.startsWith('suspiciousness_') && typeof value === 'number' && value > maxScore) {
+      maxScore = value;
+      maxVariant = key.slice('suspiciousness_'.length);
+    }
+  }
+  return maxScore >= 0 ? { score: maxScore, variant: maxVariant } : null;
+}
+
 /** Reconstruct a MonitorEval from sidecar metadata (scores + evals). */
 export function monitorEvalFromSidecar(
   metadata: { scores?: Record<string, number>; evals?: SidecarEvals; transcript_hash?: string } | null | undefined,
@@ -120,12 +133,16 @@ export function monitorEvalFromSidecar(
     }
   }
 
+  // Derive global score/reasoning from max variant
+  const maxVariant = computeMaxSuspiciousness(scores);
+  const maxVariantEval = maxVariant ? susp?.variants?.[maxVariant.variant] : null;
+
   return {
     evalId: null,
     status: 'done',
-    score: susp?.score ?? scores.suspiciousness ?? null,
-    reasoning: susp?.reasoning ?? null,
-    results: susp?.results ?? [],
+    score: maxVariant?.score ?? null,
+    reasoning: maxVariantEval?.reasoning ?? null,
+    results: maxVariantEval?.results ?? [],
     variantEvals,
     egregiousness: egr
       ? {

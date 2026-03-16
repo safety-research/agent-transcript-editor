@@ -666,8 +666,13 @@ function SidebarFileSection() {
                 let score: number | null = null;
                 if (fileState?.monitorEval?.status === 'done' && fileState.monitorEval.score !== null && (fileState.monitorEval.transcriptHash == null || fileState.monitorEval.transcriptHash === fileState.transcriptHash)) {
                   score = fileState.monitorEval.score;
-                } else if (file.scores?.suspiciousness != null) {
-                  score = file.scores.suspiciousness;
+                } else if (file.scores) {
+                  const variantScores = Object.entries(file.scores)
+                    .filter(([k, v]) => k.startsWith('suspiciousness_') && v != null)
+                    .map(([, v]) => v!);
+                  if (variantScores.length > 0) {
+                    score = Math.max(...variantScores);
+                  }
                 }
                 if (score !== null) {
                   const colorClass = score >= 70 ? 'file-score-red' : score >= 40 ? 'file-score-orange' : score >= 20 ? 'file-score-yellow' : 'file-score-green';
