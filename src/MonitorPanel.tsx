@@ -360,6 +360,7 @@ export function MonitorPanel({
   const isRunning = monitorEval.status === 'running';
   const isDone = monitorEval.status === 'done';
   const isError = monitorEval.status === 'error';
+  const isStale = monitorEval.transcriptHash != null && monitorEval.transcriptHash !== '' && transcriptHash !== '' && monitorEval.transcriptHash !== transcriptHash;
   const hasMultipleMetrics = showEgregiousness || showIncriminating || showEffectiveness || showConfidence || showRealism;
 
   const showScores = isDone || isRunning;
@@ -524,7 +525,7 @@ export function MonitorPanel({
               {hasMultipleMetrics ? '' : 'Suspiciousness Score'}
             </div>
 
-            {monitorEval.transcriptHash != null && monitorEval.transcriptHash !== '' && transcriptHash !== '' && monitorEval.transcriptHash !== transcriptHash && (
+            {isStale && (
               <div className="monitor-stale-warning">
                 Score may be outdated — transcript has changed since last evaluation
               </div>
@@ -598,16 +599,18 @@ export function MonitorPanel({
         <div className="monitor-actions">
           {isDone ? (
             <div className="monitor-eval-split">
+              {!isStale && (
+                <button
+                  className="monitor-eval-btn monitor-eval-btn-primary"
+                  onClick={() => onRerunMetric(selectedMetric)}
+                  disabled={isRunning || !hasMessages}
+                  title={`Re-evaluate ${metricLabel(selectedMetric)} only`}
+                >
+                  Re-evaluate {metricLabel(selectedMetric)}
+                </button>
+              )}
               <button
-                className="monitor-eval-btn monitor-eval-btn-primary"
-                onClick={() => onRerunMetric(selectedMetric)}
-                disabled={isRunning || !hasMessages}
-                title={`Re-evaluate ${metricLabel(selectedMetric)} only`}
-              >
-                Re-evaluate {metricLabel(selectedMetric)}
-              </button>
-              <button
-                className="monitor-eval-btn monitor-eval-btn-secondary"
+                className={isStale ? "monitor-eval-btn" : "monitor-eval-btn monitor-eval-btn-secondary"}
                 onClick={onEvaluate}
                 disabled={isRunning || !hasMessages}
                 title="Re-evaluate all metrics"
