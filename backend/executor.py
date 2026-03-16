@@ -523,6 +523,12 @@ def execute_write_tool(
         content = inp["content"]
         cwd = inp["cwd"]
 
+        if not isinstance(content, list):
+            return ExecuteResult(
+                success=False,
+                error=f"content must be an array of content blocks, got {type(content).__name__}",
+            )
+
         array_index = ui_index - 1
         if array_index < 0 or array_index > len(new_messages):
             return ExecuteResult(
@@ -541,6 +547,12 @@ def execute_write_tool(
     elif name == "update_message":
         ui_index = inp["index"]
         content = inp["content"]
+
+        if not isinstance(content, list):
+            return ExecuteResult(
+                success=False,
+                error=f"content must be an array of content blocks, got {type(content).__name__}",
+            )
 
         array_index = to_array_index(ui_index)
         if array_index < 0 or array_index >= len(new_messages):
@@ -649,6 +661,13 @@ def execute_write_tool(
                 success=False,
                 error=f"Invalid range: {start_ui}-{end_ui}. Valid range: 1-{len(new_messages)}",
             )
+
+        for i, msg in enumerate(replacements):
+            if not isinstance(msg.get("content"), list):
+                return ExecuteResult(
+                    success=False,
+                    error=f"Replacement message {i}: content must be an array of content blocks, got {type(msg.get('content')).__name__}",
+                )
 
         removed_count = end_array - start_array + 1
         new_messages[start_array : end_array + 1] = replacements
