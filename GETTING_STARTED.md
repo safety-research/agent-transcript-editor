@@ -68,8 +68,6 @@ cp backend/.env.example backend/.env
 # Edit backend/.env — add your ANTHROPIC_API_KEY
 ```
 
-**Important:** Set your API key in `backend/.env` **before** starting the server. The backend reads this file on startup.
-
 #### Docker (recommended)
 
 ```bash
@@ -78,7 +76,7 @@ docker compose up
 
 The frontend runs on http://localhost:5173 and the backend API on http://localhost:8000.
 
-If you update `backend/.env` after starting, restart the backend: `docker compose restart backend`.
+You can add or update your API key in `backend/.env` at any time — the backend picks up changes automatically.
 
 #### Without Docker
 

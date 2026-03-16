@@ -32,15 +32,19 @@ def resolve_api_key(api_key_id: str = "default", *, required: bool = True) -> st
     """
     env_var = "ANTHROPIC_API_KEY_ALT" if api_key_id == "alt" else "ANTHROPIC_API_KEY"
 
+    def _is_placeholder(v: str) -> bool:
+        return v.strip() == "" or v == "sk-ant-..."
+
     # Check process environment first (set via docker-compose env_file or export)
     key = os.getenv(env_var)
+    if key and _is_placeholder(key):
+        key = None
 
     # Fall back to re-reading .env file (handles post-startup edits)
     if not key and _ENV_FILE.exists():
         file_vals = dotenv_values(_ENV_FILE)
         key = file_vals.get(env_var)
-        # Ignore placeholder values from .env.example
-        if key and key.startswith("sk-ant-..."):
+        if key and _is_placeholder(key):
             key = None
         if key:
             # Promote to process env so subsequent calls are fast
@@ -121,8 +125,8 @@ async def count_tokens(request: CountTokensRequest):
 @router.get("/status")
 async def get_status():
     """Check if API keys are configured."""
-    has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
-    has_alt_key = bool(os.getenv("ANTHROPIC_API_KEY_ALT"))
+    has_key = bool(resolve_api_key("default", required=False))
+    has_alt_key = bool(resolve_api_key("alt", required=False))
     return {"configured": has_key, "alt_configured": has_alt_key}
 
 
