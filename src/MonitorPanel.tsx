@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { MonitorEval, VariantEval } from './store';
+import { metricScore, variantScore, suspiciousnessScore, suspiciousnessResults } from './store';
 type MetricType = 'suspiciousness' | 'egregiousness' | 'incriminating' | 'effectiveness' | 'confidence' | 'realism';
 
 interface Props {
@@ -301,21 +302,23 @@ function VariantBadges({ variants, selectedVariant, onSelect }: {
   if (variants.length <= 1) return null;
 
   // Find the max-scoring variant
-  const maxScore = Math.max(...variants.filter(v => v.score !== null).map(v => v.score!));
+  const variantScores = variants.map(v => variantScore(v)).filter((s): s is number => s !== null);
+  const maxScoreVal = variantScores.length > 0 ? Math.max(...variantScores) : null;
 
   return (
     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
       {variants.map(v => {
-        if (v.score === null) return null;
-        const isMax = v.score === maxScore;
+        const vs = variantScore(v);
+        if (vs === null) return null;
+        const isMax = vs === maxScoreVal;
         const isSelected = selectedVariant === v.variant;
-        const { color } = scoreColor(v.score);
+        const { color } = scoreColor(vs);
         const label = variantLabel(v.variant);
         return (
           <button
             key={v.variant}
             onClick={() => onSelect(v.variant)}
-            title={`${v.variant}: ${Math.round(v.score)}`}
+            title={`${v.variant}: ${Math.round(vs)}`}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -332,7 +335,7 @@ function VariantBadges({ variants, selectedVariant, onSelect }: {
             }}
           >
             {label}
-            <span style={{ fontWeight: 700 }}>{Math.round(v.score)}</span>
+            <span style={{ fontWeight: 700 }}>{Math.round(vs)}</span>
             {isMax && <span title="max">▲</span>}
           </button>
         );
@@ -381,12 +384,12 @@ export function MonitorPanel({
   // not just because the setting is enabled (it may have been skipped due to missing metadata).
   const failedMetrics: string[] = [];
   if (isDone) {
-    if (monitorEval.score === null && monitorEval.results.length > 0) failedMetrics.push('suspiciousness');
-    if (showEgregiousness && monitorEval.egregiousness?.results?.length && monitorEval.egregiousness.score == null) failedMetrics.push('egregiousness');
-    if (showIncriminating && monitorEval.incriminating?.results?.length && monitorEval.incriminating.score == null) failedMetrics.push('incriminating');
-    if (showEffectiveness && monitorEval.effectiveness?.results?.length && monitorEval.effectiveness.score == null) failedMetrics.push('effectiveness');
-    if (showConfidence && monitorEval.confidence?.results?.length && monitorEval.confidence.score == null) failedMetrics.push('confidence');
-    if (showRealism && monitorEval.realism?.results?.length && monitorEval.realism.score == null) failedMetrics.push('realism');
+    if (suspiciousnessScore(monitorEval) === null && monitorEval.variantEvals.some(v => v.results.length > 0)) failedMetrics.push('suspiciousness');
+    if (showEgregiousness && monitorEval.egregiousness?.results?.length && metricScore(monitorEval.egregiousness) == null) failedMetrics.push('egregiousness');
+    if (showIncriminating && monitorEval.incriminating?.results?.length && metricScore(monitorEval.incriminating) == null) failedMetrics.push('incriminating');
+    if (showEffectiveness && monitorEval.effectiveness?.results?.length && metricScore(monitorEval.effectiveness) == null) failedMetrics.push('effectiveness');
+    if (showConfidence && monitorEval.confidence?.results?.length && metricScore(monitorEval.confidence) == null) failedMetrics.push('confidence');
+    if (showRealism && monitorEval.realism?.results?.length && metricScore(monitorEval.realism) == null) failedMetrics.push('realism');
   }
 
   // Determine which results to show based on selected metric
@@ -398,8 +401,8 @@ export function MonitorPanel({
           const ve = monitorEval.variantEvals.find(v => v.variant === selectedVariant);
           if (ve) return ve.results.map(r => ({ ...r }));
         }
-        // Otherwise show the max variant's results (stored in top-level results)
-        return monitorEval.results.map(r => ({ ...r }));
+        // Otherwise show the max variant's results (derived)
+        return suspiciousnessResults(monitorEval).map(r => ({ ...r }));
       }
       case 'egregiousness':
         return monitorEval.egregiousness?.results.map(r => ({ ...r })) ?? [];
@@ -484,32 +487,32 @@ export function MonitorPanel({
               <div className="monitor-scores-arc">
                 {/* Top row: Incriminating, Effective, Confidence */}
                 <div className="monitor-scores-arc-top">
-                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', monitorEval.incriminating?.score, hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
-                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', monitorEval.effectiveness?.score, hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
-                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', monitorEval.confidence?.score, hasOutcome && hasMechanism, true, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', metricScore(monitorEval.incriminating), hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', metricScore(monitorEval.effectiveness), hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', metricScore(monitorEval.confidence), hasOutcome && hasMechanism, true, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
                 </div>
 
                 {/* Bottom row: Egregious (left), Suspicious (center), Realism (right) */}
                 <div className="monitor-scores-arc-bottom">
-                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', monitorEval.egregiousness?.score, hasOutcome && hasScenario, undefined, [!hasOutcome && 'outcome', !hasScenario && 'scenario'].filter(Boolean) as string[])}
+                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', metricScore(monitorEval.egregiousness), hasOutcome && hasScenario, undefined, [!hasOutcome && 'outcome', !hasScenario && 'scenario'].filter(Boolean) as string[])}
                   <div
                     className={`monitor-score-item monitor-arc-pos-sus ${selectedMetric === 'suspiciousness' ? 'selected' : ''}`}
-                    onClick={monitorEval.score !== null ? () => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); } : undefined}
+                    onClick={suspiciousnessScore(monitorEval) !== null ? () => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); } : undefined}
                   >
-                    {monitorEval.score !== null ? (
-                      <ScoreCircle score={monitorEval.score} size={80} label="Suspicious" />
+                    {suspiciousnessScore(monitorEval) !== null ? (
+                      <ScoreCircle score={suspiciousnessScore(monitorEval)!} size={80} label="Suspicious" />
                     ) : isMetricRunning('suspiciousness') ? (
                       <SpinnerCircle size={80} label="Suspicious" />
                     ) : (
                       <PlaceholderCircle size={80} label="Suspicious" onClick={() => onRerunMetric('suspiciousness')} />
                     )}
                   </div>
-                  {showRealism && renderMetric('realism', 'Realism', 'monitor-arc-pos-rea', monitorEval.realism?.score, true, true)}
+                  {showRealism && renderMetric('realism', 'Realism', 'monitor-arc-pos-rea', metricScore(monitorEval.realism), true, true)}
                 </div>
               </div>
             ) : (
               <>
-                <ScoreCircle score={monitorEval.score!} size={88} />
+                <ScoreCircle score={suspiciousnessScore(monitorEval)!} size={88} />
               </>
             )}
 
@@ -557,7 +560,7 @@ export function MonitorPanel({
 
             {/* Run missing prompt variants for suspiciousness */}
             {isDone && !isRunning && (() => {
-              if (promptVariants.length === 0 || monitorEval.score === null) return null;
+              if (promptVariants.length === 0 || suspiciousnessScore(monitorEval) === null) return null;
               const ranVariants = new Set(monitorEval.variantEvals.map(v => v.variant));
               const missingVariants = promptVariants.filter(v => !ranVariants.has(v));
               if (missingVariants.length === 0) return null;
@@ -635,7 +638,7 @@ export function MonitorPanel({
         <div className="monitor-results">
           <EvalScoresHeader
             label={selectedMetric === 'suspiciousness' && monitorEval.variantEvals.length > 0
-              ? `Suspicious (${selectedVariant ?? monitorEval.variantEvals.reduce((a, b) => (b.score ?? -1) > (a.score ?? -1) ? b : a).variant})`
+              ? `Suspicious (${selectedVariant ?? monitorEval.variantEvals.reduce((a, b) => (variantScore(b) ?? -1) > (variantScore(a) ?? -1) ? b : a).variant})`
               : metricLabel(selectedMetric)}
             count={results.length}
             scores={evalScores}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useStore, monitorEvalFromSidecar, makeFileKey } from './store';
+import { useStore, monitorEvalFromSidecar, makeFileKey, suspiciousnessScore } from './store';
 import type { FileKey } from './store';
 import { normalizeMessages } from './normalizeMessages';
 import { triggerMonitorEval } from './monitor';
@@ -664,8 +664,8 @@ function SidebarFileSection() {
                 }
                 // Try file's live eval first, then fall back to sidecar scores from API
                 let score: number | null = null;
-                if (fileState?.monitorEval?.status === 'done' && fileState.monitorEval.score !== null && (fileState.monitorEval.transcriptHash == null || fileState.monitorEval.transcriptHash === fileState.transcriptHash)) {
-                  score = fileState.monitorEval.score;
+                if (fileState?.monitorEval?.status === 'done' && suspiciousnessScore(fileState.monitorEval) !== null && (fileState.monitorEval.transcriptHash == null || fileState.monitorEval.transcriptHash === fileState.transcriptHash)) {
+                  score = suspiciousnessScore(fileState.monitorEval);
                 } else if (file.scores) {
                   const variantScores = Object.entries(file.scores)
                     .filter(([k, v]) => k.startsWith('suspiciousness_') && v != null)

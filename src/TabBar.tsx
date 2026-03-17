@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useStore, parseFileKey } from './store';
+import { useStore, parseFileKey, suspiciousnessScore } from './store';
 import type { FileState, FileKey } from './store';
 
 import { API_BASE } from './constants';
@@ -79,8 +79,8 @@ function TabItem({ file, isActive, onSwitch, onClose, onRename }: {
       )}
 
       {/* Monitor score */}
-      {file.monitorEval.status === 'done' && file.monitorEval.score !== null && (
-        <ScoreBadge score={file.monitorEval.score} />
+      {file.monitorEval.status === 'done' && suspiciousnessScore(file.monitorEval) !== null && (
+        <ScoreBadge score={suspiciousnessScore(file.monitorEval)!} />
       )}
 
       {/* Close button */}

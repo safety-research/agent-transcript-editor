@@ -28,18 +28,15 @@ export function parseFileKey(fileKey: FileKey): { projectDirName: string; fileNa
 
 /** Generic metric evaluation result (used for incriminating, confidence, effectiveness, realism). */
 export interface MetricEval {
-  score: number | null;
-  reasoning: string | null;
   results: Array<{ score: number; reasoning: string; thinking?: string }>;
 }
 
-/** Egregiousness has an extra scoreNumberOnly field. */
+/** Egregiousness has an extra scoreNumberOnly field per result. */
 export interface EgregiousnessEval extends MetricEval {
-  scoreNumberOnly: number | null;
   results: Array<{ score: number; scoreNumberOnly: number; reasoning: string; thinking?: string }>;
 }
 
-// Type aliases for backward compatibility and semantic clarity
+// Type aliases for semantic clarity
 export type IncriminatingEval = MetricEval;
 export type ConfidenceEval = MetricEval;
 export type EffectivenessEval = MetricEval;
@@ -47,17 +44,12 @@ export type RealismEval = MetricEval;
 
 export interface VariantEval {
   variant: string;
-  score: number | null;
-  reasoning: string | null;
   results: Array<{ score: number; reasoning: string; thinking?: string }>;
 }
 
 export interface MonitorEval {
   evalId: string | null;
   status: 'idle' | 'running' | 'done' | 'error';
-  score: number | null;           // max across variants (was: single variant mean)
-  reasoning: string | null;
-  results: Array<{ score: number; reasoning: string; thinking?: string }>;
   variantEvals: VariantEval[];    // per-variant results
   egregiousness: EgregiousnessEval | null;
   incriminating: IncriminatingEval | null;
@@ -69,31 +61,77 @@ export interface MonitorEval {
   runningMetrics: string[] | null;  // which metrics are currently being evaluated (null = all)
 }
 
-interface SidecarEvals {
-  suspiciousness?: {
-    score?: number;
-    reasoning?: string;
-    results?: Array<{ score: number; reasoning: string; thinking?: string }>;
-    variants?: Record<string, { score: number; reasoning: string; results: Array<{ score: number; reasoning: string; thinking?: string }> }>;
-  };
-  egregiousness?: EgregiousnessEval;
-  incriminating?: IncriminatingEval;
-  effectiveness?: EffectivenessEval;
-  confidence?: ConfidenceEval;
-  realism?: RealismEval;
+// ── Derived score/reasoning helpers ─────────────────────────────────
+
+/** Compute mean score from a metric's results (excluding errors with score < 0). */
+export function metricScore(ev: MetricEval | null | undefined): number | null {
+  if (!ev) return null;
+  const valid = ev.results.filter(r => r.score >= 0);
+  if (valid.length === 0) return null;
+  return Math.round(valid.reduce((a, b) => a + b.score, 0) / valid.length * 10) / 10;
 }
 
-/** Compute max suspiciousness from per-variant score keys (suspiciousness_*). */
-function computeMaxSuspiciousness(scores: Record<string, number>): { score: number; variant: string } | null {
-  let maxScore = -1;
-  let maxVariant = '';
-  for (const [key, value] of Object.entries(scores)) {
-    if (key.startsWith('suspiciousness_') && typeof value === 'number' && value > maxScore) {
-      maxScore = value;
-      maxVariant = key.slice('suspiciousness_'.length);
+/** Get first valid reasoning from a metric's results. */
+export function metricReasoning(ev: MetricEval | null | undefined): string | null {
+  if (!ev) return null;
+  const valid = ev.results.filter(r => r.score >= 0);
+  return valid.length > 0 ? valid[0].reasoning : null;
+}
+
+/** Compute mean scoreNumberOnly for egregiousness. */
+export function metricScoreNumberOnly(ev: EgregiousnessEval | null | undefined): number | null {
+  if (!ev) return null;
+  const valid = ev.results.filter(r => r.score >= 0 && r.scoreNumberOnly != null);
+  if (valid.length === 0) return null;
+  return Math.round(valid.reduce((a, b) => a + b.scoreNumberOnly, 0) / valid.length * 10) / 10;
+}
+
+/** Get score for a variant eval. */
+export function variantScore(ve: VariantEval): number | null {
+  return metricScore(ve);
+}
+
+/** Get the max suspiciousness score across all variants. */
+export function suspiciousnessScore(ev: MonitorEval): number | null {
+  const scores = ev.variantEvals.map(v => metricScore(v)).filter((s): s is number => s !== null);
+  return scores.length > 0 ? Math.round(Math.max(...scores) * 10) / 10 : null;
+}
+
+/** Get the results array for the max-scoring suspiciousness variant. */
+export function suspiciousnessResults(ev: MonitorEval): Array<{ score: number; reasoning: string; thinking?: string }> {
+  const maxVariant = _maxSuspiciousnessVariant(ev);
+  return maxVariant?.results ?? [];
+}
+
+function _maxSuspiciousnessVariant(ev: MonitorEval): VariantEval | null {
+  let best: VariantEval | null = null;
+  let bestScore = -1;
+  for (const v of ev.variantEvals) {
+    const s = metricScore(v);
+    if (s !== null && s > bestScore) {
+      bestScore = s;
+      best = v;
     }
   }
-  return maxScore >= 0 ? { score: maxScore, variant: maxVariant } : null;
+  return best;
+}
+
+interface SidecarEvals {
+  suspiciousness?: {
+    score?: number;       // legacy — ignored when results present
+    reasoning?: string;   // legacy — ignored when results present
+    results?: Array<{ score: number; reasoning: string; thinking?: string }>;
+    variants?: Record<string, {
+      score?: number;     // legacy — ignored when results present
+      reasoning?: string; // legacy — ignored when results present
+      results?: Array<{ score: number; reasoning: string; thinking?: string }>;
+    }>;
+  };
+  egregiousness?: { score?: number; scoreNumberOnly?: number; reasoning?: string; results?: EgregiousnessEval['results'] };
+  incriminating?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
+  effectiveness?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
+  confidence?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
+  realism?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
 }
 
 /** Reconstruct a MonitorEval from sidecar metadata (scores + evals). */
@@ -114,12 +152,13 @@ export function monitorEvalFromSidecar(
   const variantEvals: VariantEval[] = [];
   if (susp?.variants) {
     for (const [variant, data] of Object.entries(susp.variants)) {
-      variantEvals.push({
-        variant,
-        score: data.score,
-        reasoning: data.reasoning,
-        results: data.results ?? [],
-      });
+      // Backwards compat: if results is empty but legacy score/reasoning exist, synthesize
+      const results = data.results && data.results.length > 0
+        ? data.results
+        : (data.score != null && data.reasoning != null
+          ? [{ score: data.score, reasoning: data.reasoning }]
+          : []);
+      variantEvals.push({ variant, results });
     }
   }
 
@@ -128,25 +167,32 @@ export function monitorEvalFromSidecar(
     for (const [key, value] of Object.entries(scores)) {
       if (key.startsWith('suspiciousness_') && typeof value === 'number') {
         const variant = key.slice('suspiciousness_'.length);
-        variantEvals.push({ variant, score: value, reasoning: null, results: [] });
+        variantEvals.push({ variant, results: [] });
       }
     }
   }
 
-  // Derive global score/reasoning from max variant
-  const maxVariant = computeMaxSuspiciousness(scores);
-  const maxVariantEval = maxVariant ? susp?.variants?.[maxVariant.variant] : null;
+  // Helper: build a MetricEval from sidecar data, falling back to legacy score/reasoning fields
+  const buildMetricEval = (sidecar: { score?: number; reasoning?: string; results?: MetricEval['results'] } | undefined, fallbackScore: number | undefined): MetricEval | null => {
+    if (sidecar?.results && sidecar.results.length > 0) {
+      return { results: sidecar.results };
+    }
+    // Backwards compat: synthesize results from legacy fields
+    if (sidecar?.score != null && sidecar.reasoning != null) {
+      return { results: [{ score: sidecar.score, reasoning: sidecar.reasoning }] };
+    }
+    if (fallbackScore != null) {
+      return { results: [] };
+    }
+    return null;
+  };
 
   return {
     evalId: null,
     status: 'done',
-    score: maxVariant?.score ?? null,
-    reasoning: maxVariantEval?.reasoning ?? null,
-    results: maxVariantEval?.results ?? [],
     variantEvals,
     egregiousness: egr
       ? {
-          ...egr,
           results: (egr.results ?? []).map((r: EgregiousnessEval['results'][number] & Record<string, unknown>) => ({
             score: r.score,
             reasoning: r.reasoning,
@@ -155,11 +201,11 @@ export function monitorEvalFromSidecar(
             ...(r.thinking ? { thinking: r.thinking } : {}),
           })),
         }
-      : (scores.egregiousness != null ? { score: scores.egregiousness, scoreNumberOnly: null, reasoning: null, results: [] } : null),
-    incriminating: inc ?? (scores.incriminating != null ? { score: scores.incriminating, reasoning: null, results: [] } : null),
-    effectiveness: eff ?? (scores.effectiveness != null ? { score: scores.effectiveness, reasoning: null, results: [] } : null),
-    confidence: conf ?? (scores.confidence != null ? { score: scores.confidence, reasoning: null, results: [] } : null),
-    realism: real ?? (scores.realism != null ? { score: scores.realism, reasoning: null, results: [] } : null),
+      : (scores.egregiousness != null ? { results: [] } : null),
+    incriminating: buildMetricEval(inc, scores.incriminating),
+    effectiveness: buildMetricEval(eff, scores.effectiveness),
+    confidence: buildMetricEval(conf, scores.confidence),
+    realism: buildMetricEval(real, scores.realism),
     transcriptHash: metadata.transcript_hash ?? null,
     errorMessage: null,
     runningMetrics: null,
@@ -226,9 +272,6 @@ function defaultMonitorEval(): MonitorEval {
   return {
     evalId: null,
     status: 'idle',
-    score: null,
-    reasoning: null,
-    results: [],
     variantEvals: [],
     egregiousness: null,
     incriminating: null,
@@ -1341,7 +1384,7 @@ export const useStore = create<WorkspaceState>()(
           if (file.monitorEval.status === 'running') {
             file.monitorEval = { ...file.monitorEval, status: 'idle' };
           }
-          if (file.monitorEval.score !== null && file.monitorEval.results.length > 0 && file.monitorEval.status !== 'done') {
+          if (suspiciousnessScore(file.monitorEval) !== null && file.monitorEval.status !== 'done') {
             file.monitorEval = { ...file.monitorEval, status: 'done' };
           }
           // Ensure variantEvals exists

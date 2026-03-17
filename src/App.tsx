@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Message, ContentBlock as ContentBlockType } from './types';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { useStore, monitorEvalFromSidecar } from './store';
+import { useStore, monitorEvalFromSidecar, suspiciousnessScore, metricScore } from './store';
 import { normalizeMessages } from './normalizeMessages';
 import { MessageItem } from './MessageItem';
 import { SearchBar } from './SearchBar';
@@ -515,7 +515,7 @@ function App() {
       if (!res.ok) throw new Error('Save failed');
 
       const inheritedEval = monitorEval.status === 'done'
-        ? { ...monitorEval, results: [...monitorEval.results] }
+        ? { ...monitorEval }
         : undefined;
       const newFileKey = openFile(activeProjectDirName, forkName, [...messages], inheritedEval);
 
@@ -649,7 +649,7 @@ function App() {
 
       // Open the branch in a new file, inheriting the monitor score
       const inheritedEval = monitorEval.status === 'done'
-        ? { ...monitorEval, results: [...monitorEval.results] }
+        ? { ...monitorEval }
         : undefined;
       const newFileKey = openFile(activeProjectDirName, newName.endsWith('.jsonl') ? newName : `${newName}.jsonl`, [...messages], inheritedEval);
 
@@ -1023,11 +1023,11 @@ function App() {
                   onClick={() => setRightPanelTab('monitor')}
                 >
                   Monitor
-                  {monitorEval.score !== null && (
+                  {suspiciousnessScore(monitorEval) !== null && (
                     <span className={`right-panel-tab-score ${
-                      monitorEval.score >= 70 ? 'score-red' : monitorEval.score >= 40 ? 'score-orange' : monitorEval.score >= 20 ? 'score-yellow' : 'score-green'
+                      suspiciousnessScore(monitorEval)! >= 70 ? 'score-red' : suspiciousnessScore(monitorEval)! >= 40 ? 'score-orange' : suspiciousnessScore(monitorEval)! >= 20 ? 'score-yellow' : 'score-green'
                     }`}>
-                      {Math.round(monitorEval.score)}
+                      {Math.round(suspiciousnessScore(monitorEval)!)}
                     </span>
                   )}
                   {monitorEval.status === 'running' && (
@@ -1050,9 +1050,9 @@ function App() {
                   onApplyAndClear={handleApplyAndClear}
                   onFork={handleForkWithPrompt}
                   onJumpToMessage={(oneIndexed: number) => jumpToMessage(oneIndexed - 1)}
-                  monitorScore={monitorEval.score}
+                  monitorScore={suspiciousnessScore(monitorEval)}
                   goalScore={goalScore}
-                  confidenceScore={monitorEval.confidence?.score ?? null}
+                  confidenceScore={metricScore(monitorEval.confidence)}
                   hasMessages={messages.length > 0}
                 />
               ) : (

@@ -120,9 +120,6 @@ export async function triggerMonitorEval(fileKey: FileKey, metricsOverride?: str
     const partialReset: Partial<import('./store').MonitorEval> = { status: 'running', errorMessage: null };
     for (const m of metricsOverride) {
       if (m === 'suspiciousness') {
-        partialReset.score = null;
-        partialReset.reasoning = null;
-        partialReset.results = [];
         // Only clear variantEvals if rerunning ALL variants (no variantOverrides)
         if (!variantOverrides) {
           partialReset.variantEvals = [];
@@ -134,7 +131,7 @@ export async function triggerMonitorEval(fileKey: FileKey, metricsOverride?: str
     }
     store.setMonitorEval(fileKey, partialReset);
   } else {
-    store.setMonitorEval(fileKey, { status: 'running', score: null, reasoning: null, results: [], variantEvals: [], egregiousness: null, incriminating: null, effectiveness: null, confidence: null, realism: null, transcriptHash: null, errorMessage: null });
+    store.setMonitorEval(fileKey, { status: 'running', variantEvals: [], egregiousness: null, incriminating: null, effectiveness: null, confidence: null, realism: null, transcriptHash: null, errorMessage: null });
   }
 
   try {
@@ -298,8 +295,6 @@ export function buildMonitorUpdates(
     const variantName = key.split(':', 2)[1];
     variantEvals.push({
       variant: variantName,
-      score: metric.mean_score as number,
-      reasoning: (metric.reasoning as string) ?? null,
       results: ((metric.results as Array<Record<string, unknown>>) ?? []).map(r => ({
         score: r.score as number,
         reasoning: r.reasoning as string,
@@ -311,27 +306,16 @@ export function buildMonitorUpdates(
   if (variantEvals.length > 0) {
     // Merge with existing variant evals (for partial variant reruns)
     const newVariantNames = new Set(variantEvals.map(v => v.variant));
-    const mergedVariants = [
+    updates.variantEvals = [
       ...existingVariantEvals.filter(v => !newVariantNames.has(v.variant)),
       ...variantEvals,
     ];
-
-    const completedScores = mergedVariants.filter(v => v.score !== null).map(v => v.score!);
-    const maxScore = completedScores.length > 0 ? Math.round(Math.max(...completedScores) * 10) / 10 : null;
-    const maxVariant = mergedVariants.find(v => v.score === maxScore);
-    updates.score = maxScore;
-    updates.reasoning = maxVariant?.reasoning ?? null;
-    updates.results = maxVariant?.results ?? [];
-    updates.variantEvals = mergedVariants;
   }
 
   // Process other metrics
   const egr = metrics.egregiousness;
   if (egr?.status === 'done') {
     updates.egregiousness = {
-      score: egr.mean_score as number,
-      scoreNumberOnly: (egr.meanScoreNumberOnly as number) ?? null,
-      reasoning: (egr.reasoning as string) ?? null,
       results: ((egr.results as Array<Record<string, unknown>>) ?? []).map(r => ({
         score: r.score as number,
         scoreNumberOnly: r.scoreNumberOnly as number,
@@ -345,8 +329,6 @@ export function buildMonitorUpdates(
     const m = metrics[metricName];
     if (m?.status !== 'done') continue;
     updates[metricName] = {
-      score: m.mean_score as number,
-      reasoning: (m.reasoning as string) ?? null,
       results: ((m.results as Array<Record<string, unknown>>) ?? []).map(r => ({
         score: r.score as number,
         reasoning: r.reasoning as string,
