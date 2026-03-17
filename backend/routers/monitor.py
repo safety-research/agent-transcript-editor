@@ -491,13 +491,13 @@ async def _run_file_evaluation(eval_id: str, request: EvaluateFileRequest):
                 # Existing variants that weren't rerun this time
                 for vname, vdata in existing_meta.items():
                     if vname not in variant_data:
-                        # Derive mean_score from results, fall back to legacy score field
                         results = vdata.get("results", [])
                         valid = [r for r in results if r.get("score", -1) >= 0]
-                        mean_score = round(sum(r["score"] for r in valid) / len(valid), 1) if valid else vdata.get("score")
+                        if not valid:
+                            continue
                         variant_data[vname] = {
-                            "mean_score": mean_score,
-                            "reasoning": valid[0]["reasoning"] if valid else vdata.get("reasoning"),
+                            "mean_score": round(sum(r["score"] for r in valid) / len(valid), 1),
+                            "reasoning": valid[0]["reasoning"],
                             "results": results,
                         }
 
@@ -757,31 +757,19 @@ def _reconstruct_metrics_from_cache(cached: dict[str, Any]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
     cached_evals = cached.get("evals", {})
 
-    cached_scores = cached.get("scores", {})
-
     susp = cached_evals.get("suspiciousness")
     if susp and "variants" in susp:
         for vname, vdata in susp["variants"].items():
             results = vdata.get("results", [])
-            # Backwards compat: derive mean_score from results, fall back to legacy score field
             valid = [r for r in results if r.get("score", -1) >= 0]
-            mean_score = round(sum(r["score"] for r in valid) / len(valid), 1) if valid else vdata.get("score")
+            if not valid:
+                continue
             metrics[f"suspiciousness:{vname}"] = {
                 "status": "done",
-                "mean_score": mean_score,
-                "reasoning": valid[0]["reasoning"] if valid else vdata.get("reasoning"),
+                "mean_score": round(sum(r["score"] for r in valid) / len(valid), 1),
+                "reasoning": valid[0]["reasoning"],
                 "results": results,
             }
-    elif susp:
-        results = susp.get("results", [])
-        valid = [r for r in results if r.get("score", -1) >= 0]
-        mean_score = round(sum(r["score"] for r in valid) / len(valid), 1) if valid else susp.get("score")
-        metrics["suspiciousness:control_arena"] = {
-            "status": "done",
-            "mean_score": mean_score,
-            "reasoning": valid[0]["reasoning"] if valid else susp.get("reasoning"),
-            "results": results,
-        }
 
     for metric_name in ("egregiousness", "incriminating", "effectiveness", "confidence", "realism"):
         m = cached_evals.get(metric_name)
@@ -799,21 +787,19 @@ def _reconstruct_metrics_from_cache(cached: dict[str, Any]) -> dict[str, Any]:
             ]
         else:
             normalized_results = raw_results
-        # Derive mean_score from results, fall back to legacy score field or scores dict
         valid = [r for r in normalized_results if r.get("score", -1) >= 0]
-        mean_score = round(sum(r["score"] for r in valid) / len(valid), 1) if valid else m.get("score", cached_scores.get(metric_name))
+        if not valid:
+            continue
         entry: dict[str, Any] = {
             "status": "done",
-            "mean_score": mean_score,
-            "reasoning": valid[0]["reasoning"] if valid else m.get("reasoning"),
+            "mean_score": round(sum(r["score"] for r in valid) / len(valid), 1),
+            "reasoning": valid[0]["reasoning"],
             "results": normalized_results,
         }
         if metric_name == "egregiousness":
             egr_valid = [r for r in normalized_results if r.get("score", -1) >= 0 and r.get("scoreNumberOnly") is not None]
             if egr_valid:
                 entry["meanScoreNumberOnly"] = round(sum(r["scoreNumberOnly"] for r in egr_valid) / len(egr_valid), 1)
-            elif "scoreNumberOnly" in m:
-                entry["meanScoreNumberOnly"] = m["scoreNumberOnly"]
         metrics[metric_name] = entry
 
     return metrics

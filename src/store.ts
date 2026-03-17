@@ -118,20 +118,15 @@ function _maxSuspiciousnessVariant(ev: MonitorEval): VariantEval | null {
 
 interface SidecarEvals {
   suspiciousness?: {
-    score?: number;       // legacy — ignored when results present
-    reasoning?: string;   // legacy — ignored when results present
-    results?: Array<{ score: number; reasoning: string; thinking?: string }>;
     variants?: Record<string, {
-      score?: number;     // legacy — ignored when results present
-      reasoning?: string; // legacy — ignored when results present
-      results?: Array<{ score: number; reasoning: string; thinking?: string }>;
+      results: Array<{ score: number; reasoning: string; thinking?: string }>;
     }>;
   };
-  egregiousness?: { score?: number; scoreNumberOnly?: number; reasoning?: string; results?: EgregiousnessEval['results'] };
-  incriminating?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
-  effectiveness?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
-  confidence?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
-  realism?: { score?: number; reasoning?: string; results?: MetricEval['results'] };
+  egregiousness?: { results: EgregiousnessEval['results'] };
+  incriminating?: MetricEval;
+  effectiveness?: MetricEval;
+  confidence?: MetricEval;
+  realism?: MetricEval;
 }
 
 /** Reconstruct a MonitorEval from sidecar metadata (scores + evals). */
@@ -152,40 +147,9 @@ export function monitorEvalFromSidecar(
   const variantEvals: VariantEval[] = [];
   if (susp?.variants) {
     for (const [variant, data] of Object.entries(susp.variants)) {
-      // Backwards compat: if results is empty but legacy score/reasoning exist, synthesize
-      const results = data.results && data.results.length > 0
-        ? data.results
-        : (data.score != null && data.reasoning != null
-          ? [{ score: data.score, reasoning: data.reasoning }]
-          : []);
-      variantEvals.push({ variant, results });
+      variantEvals.push({ variant, results: data.results });
     }
   }
-
-  // If no variant data but we have per-variant flat scores, reconstruct from those
-  if (variantEvals.length === 0) {
-    for (const [key, value] of Object.entries(scores)) {
-      if (key.startsWith('suspiciousness_') && typeof value === 'number') {
-        const variant = key.slice('suspiciousness_'.length);
-        variantEvals.push({ variant, results: [] });
-      }
-    }
-  }
-
-  // Helper: build a MetricEval from sidecar data, falling back to legacy score/reasoning fields
-  const buildMetricEval = (sidecar: { score?: number; reasoning?: string; results?: MetricEval['results'] } | undefined, fallbackScore: number | undefined): MetricEval | null => {
-    if (sidecar?.results && sidecar.results.length > 0) {
-      return { results: sidecar.results };
-    }
-    // Backwards compat: synthesize results from legacy fields
-    if (sidecar?.score != null && sidecar.reasoning != null) {
-      return { results: [{ score: sidecar.score, reasoning: sidecar.reasoning }] };
-    }
-    if (fallbackScore != null) {
-      return { results: [] };
-    }
-    return null;
-  };
 
   return {
     evalId: null,
@@ -193,7 +157,7 @@ export function monitorEvalFromSidecar(
     variantEvals,
     egregiousness: egr
       ? {
-          results: (egr.results ?? []).map((r: EgregiousnessEval['results'][number] & Record<string, unknown>) => ({
+          results: egr.results.map((r: EgregiousnessEval['results'][number] & Record<string, unknown>) => ({
             score: r.score,
             reasoning: r.reasoning,
             // Normalize snake_case from old sidecars to camelCase
@@ -201,11 +165,11 @@ export function monitorEvalFromSidecar(
             ...(r.thinking ? { thinking: r.thinking } : {}),
           })),
         }
-      : (scores.egregiousness != null ? { results: [] } : null),
-    incriminating: buildMetricEval(inc, scores.incriminating),
-    effectiveness: buildMetricEval(eff, scores.effectiveness),
-    confidence: buildMetricEval(conf, scores.confidence),
-    realism: buildMetricEval(real, scores.realism),
+      : null,
+    incriminating: inc ?? null,
+    effectiveness: eff ?? null,
+    confidence: conf ?? null,
+    realism: real ?? null,
     transcriptHash: metadata.transcript_hash ?? null,
     errorMessage: null,
     runningMetrics: null,

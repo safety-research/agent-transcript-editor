@@ -791,26 +791,22 @@ async def _evaluate_monitor_score(
             vname = max_variant_key.removeprefix("suspiciousness_")
             susp_evals = store.get("evals", {}).get("suspiciousness", {})
             variant_eval = susp_evals.get("variants", {}).get(vname, {})
-            # Derive reasoning from results (new format) or fall back to legacy field
             results = variant_eval.get("results", [])
             valid = [r for r in results if r.get("score", -1) >= 0]
-            reasoning = valid[0]["reasoning"] if valid else variant_eval.get("reasoning")
             collected["suspiciousness"] = {
                 "score": max_score,
-                "reasoning": reasoning,
+                "reasoning": valid[0]["reasoning"] if valid else None,
             }
 
         for metric_name, score_val in all_scores.items():
             if metric_name.startswith("suspiciousness"):
                 continue
             eval_data = store.get("evals", {}).get(metric_name, {})
-            # Derive reasoning from results (new format) or fall back to legacy field
             results = eval_data.get("results", [])
             valid = [r for r in results if r.get("score", -1) >= 0]
-            reasoning = valid[0]["reasoning"] if valid else eval_data.get("reasoning")
             collected[metric_name] = {
                 "score": score_val,
-                "reasoning": reasoning,
+                "reasoning": valid[0]["reasoning"] if valid else None,
             }
 
         if store.get("error_message"):
