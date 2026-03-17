@@ -353,7 +353,7 @@ class SettingsBody(BaseModel):
     model: str | None = None
     api_key_id: str | None = None
     mode: str | None = None
-    prompt_mode: str | None = None  # "creative", "faithful", "both"
+    prompt_mode: str | None = None  # "strategic", "literal", "both"
     # Legacy: accept global settings here for backwards compatibility
     # (batch_orchestrator sends child_lock_enabled via per-session settings)
     child_lock_enabled: bool | None = None

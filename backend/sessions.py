@@ -33,7 +33,7 @@ if _SETTINGS_PATH.exists():
 
 DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "claude-opus-4-6")
 DEFAULT_PROMPT_VARIANTS: list[str] = _SHARED_SETTINGS.get("prompt_variants", ["control_arena"])
-VALID_PROMPT_MODES = {"creative", "faithful", "both"}
+VALID_PROMPT_MODES = {"strategic", "literal", "both"}
 
 
 def _to_base36(n: int) -> str:
@@ -94,7 +94,7 @@ class Session:
     # Per-session settings
     model: str = field(default_factory=lambda: DEFAULT_MODEL)
     api_key_id: str = "default"
-    prompt_mode: str | None = None  # Per-session override; None = use global ("creative", "faithful", "both")
+    prompt_mode: str | None = None  # Per-session override; None = use global ("strategic", "literal", "both")
 
     # Connected subscribers: subscriber_id → asyncio.Queue
     subscribers: dict[str, asyncio.Queue] = field(default_factory=dict)
@@ -325,7 +325,7 @@ class GlobalSettingsBody(BaseModel):
     - Frontend SETTINGS_KEY_MAP (must match these field names)
     """
 
-    prompt_mode: str = "faithful"  # "creative", "faithful", "both"
+    prompt_mode: str = "literal"  # "strategic", "literal", "both"
     child_lock_enabled: bool = False
     lock_first_message: bool = False
     n_evals: int = 1

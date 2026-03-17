@@ -3,7 +3,7 @@ Server-side agent loop.
 
 Runs the agent conversation loop:
 1. Add user message to chat_history
-2. Build system prompt (CREATIVE.md + context)
+2. Build system prompt (STRATEGIC.md/LITERAL.md + context)
 3. Loop: call Anthropic streaming API → execute tools → broadcast events
 4. Stop when no tool calls or finish_editing called
 """
@@ -89,20 +89,20 @@ def _load_preamble(session: Session, session_manager: SessionManager) -> str:
     """Load the preamble document(s) based on prompt_mode.
 
     prompt_mode controls which documents are prepended to the system prompt:
-    - "creative": CREATIVE.md only (default)
-    - "faithful": FAITHFUL.md only
-    - "both": CREATIVE.md + FAITHFUL.md
+    - "strategic": STRATEGIC.md only (default)
+    - "literal": LITERAL.md only
+    - "both": STRATEGIC.md + LITERAL.md
     """
     mode = session.prompt_mode or session_manager.prompt_mode
 
-    if mode == "faithful":
-        return _load_document("FAITHFUL.md")
+    if mode == "literal":
+        return _load_document("LITERAL.md")
     elif mode == "both":
-        creative = _load_document("CREATIVE.md")
-        faithful = _load_document("FAITHFUL.md")
-        return f"{creative}\n\n---\n\n{faithful}"
-    else:  # "creative" (default)
-        return _load_document("CREATIVE.md")
+        strategic = _load_document("STRATEGIC.md")
+        literal = _load_document("LITERAL.md")
+        return f"{strategic}\n\n---\n\n{literal}"
+    else:  # "strategic" (default)
+        return _load_document("STRATEGIC.md")
 
 
 SYSTEM_PROMPT = """You are a transcript editor assistant for Claude Code conversation transcripts in minimal JSONL format.

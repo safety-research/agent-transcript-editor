@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend
 COPY backend/ backend/
-COPY CREATIVE.md FAITHFUL.md ./
+COPY STRATEGIC.md LITERAL.md ./
 
 # Copy built frontend
 COPY --from=frontend-build /app/dist/ dist/

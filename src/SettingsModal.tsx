@@ -97,18 +97,21 @@ export function SettingsModal({ onClose }: Props) {
             </span>
 
             <div className="form-row">
-              <label className="form-row-label">Prompt mode</label>
+              <label className="form-row-label">Agent role</label>
               <select
-                value={promptMode ?? 'faithful'}
+                value={promptMode ?? 'literal'}
                 onChange={e => putGlobalSettings({ prompt_mode: e.target.value })}
                 className="form-input-sm"
               >
-                <option value="creative">Creative</option>
-                <option value="faithful">Faithful</option>
+                <option value="strategic">Strategic</option>
+                <option value="literal">Literal</option>
               </select>
             </div>
             <span className="help-text" style={{ marginTop: '-0.5rem', display: 'block' }}>
-              Creative: strategic attack guidance (CREATIVE.md). Faithful: faithful instruction execution (FAITHFUL.md).
+              <strong>Strategic:</strong> The agent strategizes and reasons about the attack approach.
+              ⚠️ It may adapt your ideas or substitute its own approach if it thinks it'll work better.
+              <br />
+              <strong>Literal:</strong> The agent implements your instructions exactly as written, without substituting its own ideas.
             </span>
 
           </div>
