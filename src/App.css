@@ -636,7 +636,7 @@ main {
 }
 
 .chevron {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 0.5625rem;
   width: 1rem;
   text-align: center;
@@ -644,7 +644,7 @@ main {
 }
 
 .label {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-weight: var(--font-medium);
   font-size: var(--text-xs);
   text-transform: uppercase;
@@ -658,8 +658,9 @@ main {
   font-size: var(--text-sm);
 }
 
-.file-path {
-  color: var(--text-muted);
+.file-path,
+.tool-summary {
+  color: #8ee8c8;
   font-size: var(--text-xs);
   flex: 1;
   overflow: hidden;
@@ -669,7 +670,7 @@ main {
 }
 
 .preview {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-style: italic;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -692,7 +693,7 @@ main {
 }
 
 .thinking-block .block-content {
-  color: #a5b0cc;
+  color: #c8d0e8;
 }
 
 .tool-use-block .block-content {
@@ -705,6 +706,32 @@ main {
 
 .tool-result-block.error .block-content {
   color: var(--red-400);
+}
+
+/* ── Inline (non-expandable) tool blocks ─────────────────────────────── */
+
+.tool-use-inline .block-header,
+.tool-result-inline .block-header {
+  cursor: default;
+}
+
+.tool-use-inline .block-header:hover,
+.tool-result-inline .block-header:hover {
+  background: transparent;
+}
+
+.tool-result-empty {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: var(--text-xs);
+}
+
+.tool-result-content-inline {
+  color: #b0c4fc;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  flex: 1;
 }
 
 /* ── Edit Areas ────────────────────────────────────────────────────────── */
