@@ -323,7 +323,7 @@ export interface MonitorSettings {
 export interface WorkspaceSettings {
   lockFirstMessage: boolean;
   childLock: boolean;
-  promptMode: 'creative' | 'faithful';
+  promptMode: 'strategic' | 'literal';
 
   llmModel: string;
   llmApiKeyId: string;  // 'default' | 'alt'
@@ -423,7 +423,7 @@ export const useStore = create<WorkspaceState>()(
       settings: {
         lockFirstMessage: false,
         childLock: false,
-        promptMode: 'faithful',
+        promptMode: 'literal',
 
         llmModel: 'claude-opus-4-6',
         llmApiKeyId: 'default',
@@ -958,7 +958,7 @@ export const useStore = create<WorkspaceState>()(
     }),
     {
       name: 'agent-transcript-editor-workspace',
-      version: 22,
+      version: 23,
       storage: idbStorage,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1282,7 +1282,7 @@ export const useStore = create<WorkspaceState>()(
           // ── v18: Add promptMode to settings ──
           const s = state as { settings?: Record<string, unknown> };
           if (s.settings) {
-            if (s.settings.promptMode === undefined) s.settings.promptMode = 'faithful';
+            if (s.settings.promptMode === undefined) s.settings.promptMode = 'literal';
           }
         }
         if (version <= 18) {
@@ -1314,6 +1314,14 @@ export const useStore = create<WorkspaceState>()(
         if (version <= 21) {
           // ── v22: Stop persisting activeProjectId (derived from activeFileKey on hydration) ──
           delete (state as Record<string, unknown>).activeProjectId;
+        }
+        if (version <= 22) {
+          // ── v23: Rename prompt modes: creative→strategic, faithful→literal ──
+          const s = state as { settings?: Record<string, unknown> };
+          if (s.settings) {
+            if (s.settings.promptMode === 'creative') s.settings.promptMode = 'strategic';
+            if (s.settings.promptMode === 'faithful') s.settings.promptMode = 'literal';
+          }
         }
         return state as unknown as WorkspaceState;
       },

@@ -347,7 +347,7 @@ function App() {
         store.updateSettings({
           lockFirstMessage: gs.lock_first_message as boolean,
           childLock: gs.child_lock_enabled as boolean,
-          promptMode: gs.prompt_mode as 'creative' | 'faithful',
+          promptMode: gs.prompt_mode as 'strategic' | 'literal',
 
           llmModel: gs.llm_model as string,
           llmApiKeyId: gs.llm_api_key_id as string,

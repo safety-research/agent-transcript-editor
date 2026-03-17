@@ -73,7 +73,7 @@ cp examples/*.jsonl examples/*.meta.json transcripts/examples/
 - Natural language instructions to modify transcripts
 - Agent reads transcript structure and makes targeted edits
 - Fork transcripts into variants to try different approaches in parallel
-- Configurable system prompts (CREATIVE.md, FAITHFUL.md, or custom)
+- Configurable agent role: Strategic (agent reasons about attack approach) or Literal (exact instruction execution)
 
 ### Trusted Monitor Integration
 - Score transcripts for suspiciousness (0-100) across multiple prompt variants
@@ -106,8 +106,8 @@ CORS_ORIGINS=http://localhost:5173   # Comma-separated allowed origins
 
 Access via the gear icon. Configurable at runtime:
 - **Model selection**: Choose model and API key per session
-- **Prompt mode**: Creative (strategic guidance), Faithful (faithful execution), or both
-- **Creative document**: Select which .md file to use as agent system prompt
+- **Agent role**: Strategic (agent reasons about attack approach) or Literal (exact instruction execution)
+- **Role document**: Select which .md file to use as agent system prompt
 - **Monitor settings**: Number of evaluations, prompt variants, enabled metrics
 - **Rate limits**: Per-key TPM limits
 - **Child lock**: Prevent edits after monitor scoring
