@@ -18,6 +18,7 @@ import { showToast } from './toast';
 import { saveMessages, saveMetadata, putGlobalSettings, reloadFromDisk } from './api';
 import { Sidebar } from './Sidebar';
 import { LengthExtensionDialog } from './LengthExtensionDialog';
+import { getToolSummary } from './toolSummary';
 import './App.css';
 
 function getSearchableText(block: ContentBlockType): string {
@@ -33,6 +34,9 @@ function getSearchableText(block: ContentBlockType): string {
         const filePath = (input.file_path as string) ?? '';
         return filePath + '\n' + writeContent;
       }
+      // For complete inline tools, search text matches the displayed summary
+      const { summary, isComplete } = getToolSummary(block.name, input);
+      if (isComplete) return summary;
       return JSON.stringify(block.input, null, 2);
     }
     default: {

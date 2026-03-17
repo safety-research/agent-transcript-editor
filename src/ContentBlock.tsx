@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { ContentBlock as ContentBlockType, ToolUseBlock } from './types';
 import { highlightText } from './highlightText';
 import { StringModal } from './StringModal';
+import { getToolSummary, isShortContent } from './toolSummary';
 
 interface Props {
   block: ContentBlockType;
@@ -61,6 +62,19 @@ export function ContentBlockComponent({ block, onUpdate, searchQuery, matchIndex
   if (block.type === 'thinking') {
     const text = block.thinking;
     const { rendered, matchCount } = renderHighlighted(text, searchQuery, matchIndexOffset, activeMatchIndex);
+    const short = isShortContent(text);
+
+    if (short) {
+      return (
+        <div className="thinking-block" data-match-count={matchCount}>
+          <div className="block-header">
+            <span className="label">Thinking</span>
+          </div>
+          <div className="block-content text-block-markdown"><Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown></div>
+        </div>
+      );
+    }
+
     return (
       <div className="thinking-block" data-match-count={matchCount}>
         <div className="block-header" onClick={() => setExpanded(!expanded)}>
@@ -81,6 +95,8 @@ export function ContentBlockComponent({ block, onUpdate, searchQuery, matchIndex
     const isWrite = block.name === 'Write';
     const writeContent = isWrite ? (block.input as { content?: string }).content : null;
     const writeFilePath = isWrite ? ((block.input as { file_path?: string }).file_path ?? '') : '';
+    const toolInput = block.input as Record<string, unknown>;
+    const { summary, isComplete } = getToolSummary(block.name, toolInput);
 
     // For Write blocks, highlight file path (in header) and content separately.
     // Match offsets stay consistent with getSearchableText (filePath + '\n' + content).
@@ -90,7 +106,9 @@ export function ContentBlockComponent({ block, onUpdate, searchQuery, matchIndex
       : null;
     // +1 for the '\n' separator in getSearchableText that we don't render
     const contentOffset = matchIndexOffset + (pathHighlight ? pathHighlight.matchCount : 0);
-    const displayText = isWriteWithContent ? writeContent : JSON.stringify(block.input, null, 2);
+
+    // For complete inline tools, search text is the summary; for others, it's the full display text
+    const displayText = isWriteWithContent ? writeContent : (isComplete ? summary : JSON.stringify(block.input, null, 2));
     const { rendered, matchCount: contentMatchCount } = renderHighlighted(displayText, searchQuery, contentOffset, activeMatchIndex);
     const matchCount = (pathHighlight?.matchCount ?? 0) + contentMatchCount;
 
@@ -123,15 +141,43 @@ export function ContentBlockComponent({ block, onUpdate, searchQuery, matchIndex
       setShowStringModal(false);
     };
 
+    // Complete inline tools: flat single line, no expand
+    if (isComplete && !isWrite) {
+      return (
+        <>
+          <div className="tool-use-block tool-use-inline" data-match-count={matchCount}>
+            <div className="block-header">
+              <span className="tool-name">{block.name}</span>
+              <span className="tool-summary">{searchQuery ? rendered : summary}</span>
+              {expandableFields.length > 0 && (
+                <button className="expand-multiline-btn" onClick={(e) => { e.stopPropagation(); setShowStringModal(true); }} title="View/edit fields">
+                  &#x2922;
+                </button>
+              )}
+            </div>
+          </div>
+          {showStringModal && (
+            <StringModal
+              fields={expandableFields}
+              onSave={handleStringModalSave}
+              onClose={() => setShowStringModal(false)}
+            />
+          )}
+        </>
+      );
+    }
+
     return (
       <>
         <div className="tool-use-block" data-match-count={matchCount}>
           <div className="block-header" onClick={() => setExpanded(!expanded)}>
             <span className="chevron">{expanded ? '▼' : '▶'}</span>
             <span className="tool-name">{block.name}</span>
-            {isWrite && writeFilePath && (
+            {(isWrite && writeFilePath) ? (
               <span className="file-path">{pathHighlight ? pathHighlight.rendered : writeFilePath}</span>
-            )}
+            ) : summary ? (
+              <span className="tool-summary">{summary}</span>
+            ) : null}
             {isWrite && onUpdate && (
               <button className="edit-btn" onClick={(e) => { e.stopPropagation(); handleEditWrite(); }}>
                 Edit
@@ -182,6 +228,22 @@ export function ContentBlockComponent({ block, onUpdate, searchQuery, matchIndex
         ? (block.content as Array<{type: string; text: string}>).map(b => b.text ?? '').join('\n')
         : JSON.stringify(block.content);
     const { rendered, matchCount } = renderHighlighted(contentText, searchQuery, matchIndexOffset, activeMatchIndex);
+    const short = isShortContent(contentText);
+
+    // Short results: show without expand chevron
+    if (short) {
+      const isEmpty = !contentText.trim();
+      return (
+        <div className={`tool-result-block tool-result-inline ${block.is_error ? 'error' : ''}`} data-match-count={matchCount}>
+          <div className="block-header">
+            <span className="label">Tool Result {block.is_error && '(Error)'}</span>
+            {isEmpty && <span className="tool-result-empty">(empty)</span>}
+          </div>
+          {!isEmpty && <pre className="block-content">{searchQuery ? rendered : contentText}</pre>}
+        </div>
+      );
+    }
+
     return (
       <div className={`tool-result-block ${block.is_error ? 'error' : ''}`} data-match-count={matchCount}>
         <div className="block-header" onClick={() => setExpanded(!expanded)}>
