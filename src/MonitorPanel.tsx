@@ -5,6 +5,9 @@ import type { MonitorEval, VariantEval } from './store';
 import { metricScore, variantScore, suspiciousnessScore, suspiciousnessResults } from './store';
 type MetricType = 'suspiciousness' | 'egregiousness' | 'incriminating' | 'effectiveness' | 'confidence' | 'realism';
 
+/** Metrics where high score = good (green), low score = bad (red). */
+const INVERTED_METRICS: MetricType[] = ['realism', 'confidence', 'effectiveness'];
+
 interface Props {
   monitorEval: MonitorEval;
   transcriptHash: string;
@@ -178,8 +181,7 @@ function EvalCard({ result, index, type }: {
 }) {
   const score = result.score as number;
   const isError = score < 0;
-  const invertedMetrics: MetricType[] = ['realism', 'confidence'];
-  const colorClass = isError ? 'eval-error' : scoreColorClass(score, invertedMetrics.includes(type));
+  const colorClass = isError ? 'eval-error' : scoreColorClass(score, INVERTED_METRICS.includes(type));
   const thinking = result.thinking as string | undefined;
   const [showThinking, setShowThinking] = useState(false);
 
@@ -450,9 +452,9 @@ export function MonitorPanel({
     posClass: string,
     score: number | null | undefined,
     canRun: boolean,
-    inverted?: boolean,
     missingFields?: string[],
   ) => {
+    const inverted = INVERTED_METRICS.includes(metric);
     const hasScore = score !== null && score !== undefined;
     const metricRunning = isMetricRunning(metric);
     const showDisabled = !canRun && missingFields && missingFields.length > 0;
@@ -487,14 +489,14 @@ export function MonitorPanel({
               <div className="monitor-scores-arc">
                 {/* Top row: Incriminating, Effective, Confidence */}
                 <div className="monitor-scores-arc-top">
-                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', metricScore(monitorEval.incriminating), hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
-                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', metricScore(monitorEval.effectiveness), hasOutcome && hasMechanism, undefined, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
-                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', metricScore(monitorEval.confidence), hasOutcome && hasMechanism, true, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showIncriminating && renderMetric('incriminating', 'Incriminating', 'monitor-arc-pos-inc', metricScore(monitorEval.incriminating), hasOutcome && hasMechanism, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showEffectiveness && renderMetric('effectiveness', 'Effective', 'monitor-arc-pos-eff', metricScore(monitorEval.effectiveness), hasOutcome && hasMechanism, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
+                  {showConfidence && renderMetric('confidence', 'Confidence', 'monitor-arc-pos-con', metricScore(monitorEval.confidence), hasOutcome && hasMechanism, [!hasOutcome && 'outcome', !hasMechanism && 'mechanism'].filter(Boolean) as string[])}
                 </div>
 
                 {/* Bottom row: Egregious (left), Suspicious (center), Realism (right) */}
                 <div className="monitor-scores-arc-bottom">
-                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', metricScore(monitorEval.egregiousness), hasOutcome && hasScenario, undefined, [!hasOutcome && 'outcome', !hasScenario && 'scenario'].filter(Boolean) as string[])}
+                  {showEgregiousness && renderMetric('egregiousness', 'Egregious', 'monitor-arc-pos-egr', metricScore(monitorEval.egregiousness), hasOutcome && hasScenario, [!hasOutcome && 'outcome', !hasScenario && 'scenario'].filter(Boolean) as string[])}
                   <div
                     className={`monitor-score-item monitor-arc-pos-sus ${selectedMetric === 'suspiciousness' ? 'selected' : ''}`}
                     onClick={suspiciousnessScore(monitorEval) !== null ? () => { setSelectedMetric('suspiciousness'); setSelectedVariant(null); } : undefined}
@@ -507,7 +509,7 @@ export function MonitorPanel({
                       <PlaceholderCircle size={80} label="Suspicious" onClick={() => onRerunMetric('suspiciousness')} />
                     )}
                   </div>
-                  {showRealism && renderMetric('realism', 'Realism', 'monitor-arc-pos-rea', metricScore(monitorEval.realism), true, true)}
+                  {showRealism && renderMetric('realism', 'Realism', 'monitor-arc-pos-rea', metricScore(monitorEval.realism), true)}
                 </div>
               </div>
             ) : (
