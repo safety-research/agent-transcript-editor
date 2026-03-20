@@ -10,6 +10,10 @@ import type { FileKey, VariantEval } from './store';
 
 import { API_BASE } from './constants';
 
+// Tracks the latest eval per file so superseded polling loops can bail out.
+// Prevents UI flickering when agent + UI trigger evals concurrently.
+const _activeEvalId = new Map<string, string>();
+
 /** Prompt variant metadata from trusted-monitor */
 export interface PromptVariant {
   name: string;
@@ -173,6 +177,7 @@ export async function triggerMonitorEval(fileKey: FileKey, metricsOverride?: str
 
     if (!response.ok) throw new Error(`Monitor API error: ${response.status}`);
     const { eval_id: evalId } = await response.json();
+    _activeEvalId.set(fileKey, evalId);
     store.setMonitorEval(fileKey, { evalId });
 
     await _pollEvalLoop(fileKey, evalId, snapshotHash);
@@ -203,6 +208,8 @@ export function pollExistingEval(fileKey: FileKey, evalId: string, cached?: bool
     store.setMonitorEval(fileKey, { status: 'running', evalId, errorMessage: null });
   }
 
+  _activeEvalId.set(fileKey, evalId);
+
   // Fire-and-forget — errors are caught internally
   _pollEvalLoop(fileKey, evalId, snapshotHash).catch(err => {
     const detail = err instanceof Error ? err.message : String(err);
@@ -218,6 +225,9 @@ async function _pollEvalLoop(fileKey: FileKey, evalId: string, snapshotHash: str
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Bail out if a newer eval has started for this file
+    if (_activeEvalId.get(fileKey) !== evalId) break;
+
     // Check immediately on first iteration (fast path for cached results)
     if (!firstPoll) {
       await new Promise(r => setTimeout(r, 2000));
