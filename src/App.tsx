@@ -760,20 +760,25 @@ function App() {
 
   // ── Creation from prompt ────────────────────────────────────────────
   const handleCreate = () => {
-    if (!creationPrompt.trim() || !activeFileKey) return;
+    if (!creationPrompt.trim()) return;
+    if (!backendReady) { setShowSettings(true); return; }
     const store = useStore.getState();
+    const prompt = `Create a transcript where: ${creationPrompt.trim()}`;
 
-    // Set the current file to creation mode.
-    // IMPORTANT: Do NOT call renameFile here — it changes the file key,
-    // which triggers an SSE reconnect to a different session.
-    // The submit() below sends the prompt using the old file key from
-    // this render's closure, so renaming before submit causes the agent
-    // to run on a disconnected session.
-    // The agent can rename the file via set_tab_label after creation.
+    // If no file is active (e.g. empty project), create one first.
+    // Use pendingPrompt so the auto-submit effect fires after re-render
+    // when activeFileKey updates (submit() in this closure is bound to null).
+    if (!activeFileKey) {
+      const fileKey = store.openNewFile(activeProjectDirName);
+      store.setFileMode(fileKey, 'create');
+      store.setPendingPrompt(fileKey, prompt);
+      setShowCreation(false);
+      setCreationPrompt('');
+      return;
+    }
+
     store.setFileMode(activeFileKey, 'create');
-
-    // Submit the creation prompt
-    handleSubmit(`Create a transcript where: ${creationPrompt.trim()}`);
+    submit(prompt);
     setShowCreation(false);
     setCreationPrompt('');
   };
@@ -852,6 +857,21 @@ function App() {
             <span className="backend-warning" title="Backend API key not configured">⚠️</span>
           )}
           {!showEmptyState && <button onClick={runCheck} title="Check for file consistency and tool ID issues">Check</button>}
+          {!showEmptyState && (
+            <button
+              onClick={() => {
+                if (!activeFileKey) return;
+                reloadFromDisk(activeFileKey)
+                  .then(r => {
+                    if (!r.reloaded) showToast('No active session to reload', 'info');
+                  })
+                  .catch(err => showToast(`Reload failed: ${err.message}`, 'warning'));
+              }}
+              title="Reload transcript and metadata from disk (Ctrl+Shift+R)"
+            >
+              Reload
+            </button>
+          )}
           <button onClick={() => setShowSettings(true)}>Settings</button>
         </div>
       </header>
