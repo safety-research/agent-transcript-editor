@@ -48,8 +48,10 @@ function SidebarProjectSection() {
   const [creating, setCreating] = useState(false);
   const [createValue, setCreateValue] = useState('');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch backend project directories (source of truth for project list)
   useEffect(() => {
@@ -168,6 +170,10 @@ function SidebarProjectSection() {
     setEditValue(bp.name);
   };
 
+  const filteredProjects = backendProjects.filter(bp =>
+    !searchQuery || bp.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="sidebar-project-section">
       <div className="sidebar-header">
@@ -180,8 +186,35 @@ function SidebarProjectSection() {
           +
         </button>
       </div>
+      {backendProjects.length > 5 && (
+        <div className="project-search">
+          <input
+            ref={searchInputRef}
+            className="project-search-input"
+            type="text"
+            placeholder="Search projects…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') {
+                setSearchQuery('');
+                searchInputRef.current?.blur();
+              }
+            }}
+          />
+          {searchQuery && (
+            <button
+              className="project-search-clear"
+              onClick={() => setSearchQuery('')}
+              title="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
       <div className="project-list">
-        {[...backendProjects].sort((a, b) => {
+        {[...filteredProjects].sort((a, b) => {
           // Sort by most recently modified (newest first), fall back to name
           if (a.modified && b.modified) return b.modified.localeCompare(a.modified);
           if (a.modified) return -1;

@@ -3295,6 +3295,50 @@ mark.active {
   flex-shrink: 0;
 }
 
+.project-search {
+  padding: var(--space-1) var(--space-3);
+  position: relative;
+}
+
+.project-search-input {
+  width: 100%;
+  padding: 4px 24px 4px 8px;
+  font-size: var(--text-xs);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.project-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.project-search-input:focus {
+  border-color: var(--purple-500);
+}
+
+.project-search-clear {
+  position: absolute;
+  right: calc(var(--space-3) + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.project-search-clear:hover {
+  color: var(--text-primary);
+}
+
 .project-list {
   max-height: 200px;
   overflow-y: auto;
