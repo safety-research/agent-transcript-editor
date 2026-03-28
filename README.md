@@ -114,12 +114,13 @@ Access via the gear icon. Configurable at runtime:
 
 ## Transcript Format
 
-Minimal JSONL — one JSON object per line:
+Minimal JSONL — one JSON object per line, each with a single content block:
 
-```json
-{"role": "user", "content": [{"type": "text", "text": "Fix the failing test"}], "cwd": "/home/user/project"}
-{"role": "assistant", "content": [{"type": "thinking", "thinking": "Let me look at the test..."}, {"type": "tool_use", "id": "toolu_01ABC...", "name": "Read", "input": {"file_path": "test.py"}}]}
-{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_01ABC...", "content": "def test_foo():..."}]}
+```jsonl
+{"role": "user", "content": {"type": "text", "text": "Fix the failing test"}, "cwd": "/home/user/project"}
+{"role": "assistant", "content": {"type": "thinking", "thinking": "Let me look at the test..."}, "cwd": "/home/user/project"}
+{"role": "assistant", "content": {"type": "tool_use", "id": "toolu_01ABC...", "name": "Read", "input": {"file_path": "test.py"}}, "cwd": "/home/user/project"}
+{"role": "user", "content": {"type": "tool_result", "tool_use_id": "toolu_01ABC...", "content": "def test_foo():..."}, "cwd": "/home/user/project"}
 ```
 
 See [TRANSCRIPT_FORMAT.md](TRANSCRIPT_FORMAT.md) for the full specification.
