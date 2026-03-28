@@ -94,41 +94,32 @@ def safe_stringify(value: Any, indent: int | None = None) -> str:
     return result if result is not None else "[]"
 
 
-def _format_blocks_as_text(blocks: list[dict[str, Any]]) -> str:
-    """Format message content blocks as readable text.
+def _format_block_as_text(block: dict[str, Any]) -> str:
+    """Format a single content block as readable text.
 
     Unlike safe_stringify (json.dumps), this preserves string content verbatim —
     real newlines stay as newlines, quotes stay as quotes. This avoids double-encoding
     when the result gets embedded in a JSON response.
     """
-    if not blocks:
-        return "(empty)"
-    parts: list[str] = []
-    for i, block in enumerate(blocks):
-        if "type" not in block:
-            raise ValueError(f"Content block {i} missing required 'type' field: {safe_stringify(block, 2)}")
-        block_type = block["type"]
-        if block_type == "text":
-            parts.append(f"[block {i}: text]\n{block['text']}")
-        elif block_type == "thinking":
-            parts.append(f"[block {i}: thinking]\n{block['thinking']}")
-        elif block_type == "tool_result":
-            tool_use_id = block.get("tool_use_id", "")
-            content = block.get("content", "")
-            if isinstance(content, str):
-                parts.append(f"[block {i}: tool_result for {tool_use_id}]\n{content}")
-            else:
-                parts.append(
-                    f"[block {i}: tool_result for {tool_use_id}]\n" + json.dumps(content, indent=2, ensure_ascii=False)
-                )
-        elif block_type == "tool_use":
-            name = block.get("name", "")
-            parts.append(
-                f'[block {i}: tool_use "{name}"]\n' + json.dumps(block.get("input", {}), indent=2, ensure_ascii=False)
-            )
+    if "type" not in block:
+        raise ValueError(f"Content block missing required 'type' field: {safe_stringify(block, 2)}")
+    block_type = block["type"]
+    if block_type == "text":
+        return f"[text]\n{block['text']}"
+    elif block_type == "thinking":
+        return f"[thinking]\n{block['thinking']}"
+    elif block_type == "tool_result":
+        tool_use_id = block.get("tool_use_id", "")
+        content = block.get("content", "")
+        if isinstance(content, str):
+            return f"[tool_result for {tool_use_id}]\n{content}"
         else:
-            raise ValueError(f"Unknown content block type {block_type!r} in block {i}: {safe_stringify(block, 2)}")
-    return "\n\n".join(parts)
+            return f"[tool_result for {tool_use_id}]\n" + json.dumps(content, indent=2, ensure_ascii=False)
+    elif block_type == "tool_use":
+        name = block.get("name", "")
+        return f'[tool_use "{name}"]\n' + json.dumps(block.get("input", {}), indent=2, ensure_ascii=False)
+    else:
+        raise ValueError(f"Unknown content block type {block_type!r}: {safe_stringify(block, 2)}")
 
 
 def _json_escape_string(s: str) -> str:
@@ -149,7 +140,7 @@ def to_array_index(ui_index: int) -> int:
 
 def _deep_copy_messages(messages: list[Message]) -> list[Message]:
     """Deep copy messages list for immutable write operations."""
-    return [{**m, "content": [dict(b) if isinstance(b, dict) else b for b in m["content"]]} for m in messages]
+    return [{**m, "content": dict(m["content"]) if isinstance(m["content"], dict) else m["content"]} for m in messages]
 
 
 # ── Mechanism Key Remapping ───────────────────────────────────────────────
@@ -274,52 +265,31 @@ def execute_read_tool(
             )
 
         message = messages[array_index]
-        block_index = inp.get("block_index")
+        block = message["content"]
         input_key = inp.get("input_key")
+        block_type = block.get("type", "unknown")
 
-        # Block mode: show raw text content of a specific block with character offsets
-        if block_index is not None:
-            blocks = message["content"] if isinstance(message["content"], list) else []
-            if block_index < 0 or block_index >= len(blocks):
+        # Field mode: show specific field of content block with character offsets
+        if input_key is not None:
+            if block_type != "tool_use":
                 return ExecuteResult(
                     success=False,
-                    error=f"Invalid block index: {block_index}. Valid range: 0-{len(blocks) - 1}",
+                    error=f"input_key only works on tool_use blocks, got {block_type}",
                 )
-
-            block = blocks[block_index]
-            block_type = block.get("type", "unknown")
-
-            if block_type == "text":
-                text_content = block["text"]
-                content_desc = "text"
-            elif block_type == "thinking":
-                text_content = block["thinking"]
-                content_desc = "thinking"
-            elif block_type == "tool_result":
-                text_content = block["content"]
-                content_desc = "tool_result content"
-            elif block_type == "tool_use":
-                if input_key:
-                    if input_key not in block["input"]:
-                        available = ", ".join(block["input"].keys())
-                        return ExecuteResult(
-                            success=False,
-                            error=f'Key "{input_key}" not found in tool_use input. Available keys: {available}',
-                        )
-                    val = block["input"][input_key]
-                    if not isinstance(val, str):
-                        return ExecuteResult(
-                            success=False,
-                            error=f'input["{input_key}"] is {type(val).__name__}, not a string. input_key only works with string fields.',
-                        )
-                    text_content = val
-                    content_desc = f'tool_use "{block["name"]}" input.{input_key} (plain string)'
-                else:
-                    text_content = json.dumps(block["input"], ensure_ascii=False)
-                    content_desc = f'tool_use "{block["name"]}" input (JSON)'
-            else:
-                text_content = safe_stringify(block, 2)
-                content_desc = f"{block_type} (full JSON)"
+            if input_key not in block["input"]:
+                available = ", ".join(block["input"].keys())
+                return ExecuteResult(
+                    success=False,
+                    error=f'Key "{input_key}" not found in tool_use input. Available keys: {available}',
+                )
+            val = block["input"][input_key]
+            if not isinstance(val, str):
+                return ExecuteResult(
+                    success=False,
+                    error=f'input["{input_key}"] is {type(val).__name__}, not a string. input_key only works with string fields.',
+                )
+            text_content = val
+            content_desc = f'tool_use "{block["name"]}" input.{input_key} (plain string)'
 
             total_length = len(text_content)
             offset = max(0, inp.get("offset", 0) or 0)
@@ -327,7 +297,6 @@ def execute_read_tool(
             chunk = text_content[offset : offset + limit]
             has_more = offset + limit < total_length
 
-            # Add line numbers with character offsets
             lines = chunk.split("\n")
             char_pos = offset
             numbered_lines = []
@@ -340,7 +309,6 @@ def execute_read_tool(
                 result=json.dumps(
                     {
                         "message_index": message_index,
-                        "block_index": block_index,
                         "block_type": block_type,
                         "content_type": content_desc,
                         "total_length": total_length,
@@ -356,50 +324,38 @@ def execute_read_tool(
 
         search = inp.get("search")
 
-        # Search within message: filter to matching content blocks
+        # Search within message
         if search:
-            blocks = message["content"] if isinstance(message["content"], list) else []
+            block_str = safe_stringify(block, 2)
             search_lower = search.lower()
-            matching_blocks: list[dict[str, Any]] = []
+            matches_search = search_lower in block_str.lower()
 
-            for bi, block in enumerate(blocks):
-                block_str = safe_stringify(block, 2)
-                if search_lower in block_str.lower():
-                    match_pos = block_str.lower().index(search_lower)
-                    context_start = max(0, match_pos - 100)
-                    context_end = min(len(block_str), match_pos + len(search) + 100)
-                    preview = (
-                        ("..." if context_start > 0 else "")
-                        + block_str[context_start:context_end]
-                        + ("..." if context_end < len(block_str) else "")
-                    )
-                    matching_blocks.append(
-                        {
-                            "block_index": bi,
-                            "type": block.get("type", "unknown"),
-                            "preview": preview,
-                        }
-                    )
+            result_data: dict[str, Any] = {
+                "message_index": message_index,
+                "role": message["role"],
+                "cwd": message.get("cwd"),
+                "search": search,
+                "block_type": block_type,
+                "matches": matches_search,
+            }
+
+            if matches_search:
+                match_pos = block_str.lower().index(search_lower)
+                context_start = max(0, match_pos - 100)
+                context_end = min(len(block_str), match_pos + len(search) + 100)
+                preview = (
+                    ("..." if context_start > 0 else "")
+                    + block_str[context_start:context_end]
+                    + ("..." if context_end < len(block_str) else "")
+                )
+                result_data["preview"] = preview
 
             return ExecuteResult(
                 success=True,
-                result=json.dumps(
-                    {
-                        "message_index": message_index,
-                        "role": message["role"],
-                        "cwd": message.get("cwd"),
-                        "search": search,
-                        "total_blocks": len(blocks),
-                        "matching_blocks": len(matching_blocks),
-                        "matches": matching_blocks,
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                ),
+                result=json.dumps(result_data, indent=2, ensure_ascii=False),
             )
 
-        content_blocks = message["content"] if isinstance(message["content"], list) else []
-        full_content = _format_blocks_as_text(content_blocks)
+        full_content = _format_block_as_text(block)
         total_length = len(full_content)
         offset = max(0, inp.get("offset", 0) or 0)
         limit = min(MAX_DETAIL_LIMIT, inp.get("limit", DEFAULT_DETAIL_LIMIT) or DEFAULT_DETAIL_LIMIT)
@@ -523,10 +479,10 @@ def execute_write_tool(
         content = inp["content"]
         cwd = inp["cwd"]
 
-        if not isinstance(content, list):
+        if not isinstance(content, dict):
             return ExecuteResult(
                 success=False,
-                error=f"content must be an array of content blocks, got {type(content).__name__}",
+                error=f"content must be a single content block dict, got {type(content).__name__}",
             )
 
         array_index = ui_index - 1
@@ -548,10 +504,10 @@ def execute_write_tool(
         ui_index = inp["index"]
         content = inp["content"]
 
-        if not isinstance(content, list):
+        if not isinstance(content, dict):
             return ExecuteResult(
                 success=False,
-                error=f"content must be an array of content blocks, got {type(content).__name__}",
+                error=f"content must be a single content block dict, got {type(content).__name__}",
             )
 
         array_index = to_array_index(ui_index)
@@ -663,10 +619,10 @@ def execute_write_tool(
             )
 
         for i, msg in enumerate(replacements):
-            if not isinstance(msg.get("content"), list):
+            if not isinstance(msg.get("content"), dict):
                 return ExecuteResult(
                     success=False,
-                    error=f"Replacement message {i}: content must be an array of content blocks, got {type(msg.get('content')).__name__}",
+                    error=f"Replacement message {i}: content must be a single content block dict, got {type(msg.get('content')).__name__}",
                 )
 
         removed_count = end_array - start_array + 1
@@ -737,93 +693,89 @@ def execute_write_tool(
 
         for i in range(range_start, range_end + 1):
             msg = new_messages[i]
+            block = msg["content"]
+            new_block = dict(block)
+            block_type = block.get("type")
             msg_modified = False
-            new_content = []
 
-            for block in msg["content"]:
-                new_block = dict(block)
-                block_type = block.get("type")
+            if block_type == "text":
+                replaced = replace_all(block["text"])
+                if replaced != block["text"]:
+                    total_replacements += count_occurrences(block["text"])
+                    msg_modified = True
+                    new_block = {**block, "text": replaced}
 
-                if block_type == "text":
-                    replaced = replace_all(block["text"])
-                    if replaced != block["text"]:
-                        total_replacements += count_occurrences(block["text"])
+            elif block_type == "thinking":
+                replaced = replace_all(block["thinking"])
+                if replaced != block["thinking"]:
+                    total_replacements += count_occurrences(block["thinking"])
+                    msg_modified = True
+                    new_block = {**block, "thinking": replaced}
+
+            elif block_type == "tool_result":
+                content = block["content"]
+                if isinstance(content, str):
+                    replaced = replace_all(content)
+                    if replaced != content:
+                        total_replacements += count_occurrences(content)
                         msg_modified = True
-                        new_block = {**block, "text": replaced}
-
-                elif block_type == "thinking":
-                    replaced = replace_all(block["thinking"])
-                    if replaced != block["thinking"]:
-                        total_replacements += count_occurrences(block["thinking"])
+                        new_block = {**block, "content": replaced}
+                else:
+                    # Non-string content (e.g., list): search recursively
+                    replaced_content = replace_in_object(content)
+                    orig_str = safe_stringify(content)
+                    new_str = safe_stringify(replaced_content)
+                    if orig_str != new_str:
+                        total_replacements += count_occurrences(orig_str)
                         msg_modified = True
-                        new_block = {**block, "thinking": replaced}
+                        new_block = {**block, "content": replaced_content}
 
-                elif block_type == "tool_result":
-                    content = block["content"]
-                    if isinstance(content, str):
-                        replaced = replace_all(content)
-                        if replaced != content:
-                            total_replacements += count_occurrences(content)
+            elif block_type == "tool_use":
+                if input_key:
+                    # input_key mode: operate directly on a specific string field
+                    if input_key in block["input"] and isinstance(block["input"][input_key], str):
+                        val = block["input"][input_key]
+                        replaced = replace_all(val)
+                        if replaced != val:
+                            total_replacements += count_occurrences(val)
                             msg_modified = True
-                            new_block = {**block, "content": replaced}
+                            new_block = {**block, "input": {**block["input"], input_key: replaced}}
+                elif raw_json:
+                    # In raw_json mode, search operates on JSON-serialized text.
+                    # Auto-escape find/replace strings so control characters
+                    # (\t, \n, etc.) match their JSON representations.
+                    # For regex mode, the user is responsible for matching JSON text.
+                    orig_str = json.dumps(block["input"], ensure_ascii=False)
+                    if find_regex:
+                        new_str = find_regex.sub(replace_str, orig_str)
+                        raw_count = len(find_regex.findall(orig_str))
                     else:
-                        # Non-string content (e.g., list): search recursively
-                        replaced_content = replace_in_object(content)
-                        orig_str = safe_stringify(content)
-                        new_str = safe_stringify(replaced_content)
-                        if orig_str != new_str:
-                            total_replacements += count_occurrences(orig_str)
-                            msg_modified = True
-                            new_block = {**block, "content": replaced_content}
-
-                elif block_type == "tool_use":
-                    if input_key:
-                        # input_key mode: operate directly on a specific string field
-                        if input_key in block["input"] and isinstance(block["input"][input_key], str):
-                            val = block["input"][input_key]
-                            replaced = replace_all(val)
-                            if replaced != val:
-                                total_replacements += count_occurrences(val)
-                                msg_modified = True
-                                new_block = {**block, "input": {**block["input"], input_key: replaced}}
-                    elif raw_json:
-                        # In raw_json mode, search operates on JSON-serialized text.
-                        # Auto-escape find/replace strings so control characters
-                        # (\t, \n, etc.) match their JSON representations.
-                        # For regex mode, the user is responsible for matching JSON text.
-                        orig_str = json.dumps(block["input"], ensure_ascii=False)
-                        if find_regex:
-                            new_str = find_regex.sub(replace_str, orig_str)
-                            raw_count = len(find_regex.findall(orig_str))
-                        else:
-                            json_find = _json_escape_string(find_str)
-                            json_replace = _json_escape_string(replace_str)
-                            raw_count = orig_str.count(json_find)
-                            new_str = orig_str.replace(json_find, json_replace)
-                        if new_str != orig_str:
-                            try:
-                                parsed = json.loads(new_str)
-                            except json.JSONDecodeError:
-                                return ExecuteResult(
-                                    success=False,
-                                    error=f"raw_json replacement produced invalid JSON. Original: {orig_str[:100]}... Result: {new_str[:100]}...",
-                                )
-                            total_replacements += raw_count
-                            msg_modified = True
-                            new_block = {**block, "input": parsed}
-                    else:
-                        replaced_input = replace_in_object(block["input"])
-                        orig_str = json.dumps(block["input"], ensure_ascii=False)
-                        new_str = json.dumps(replaced_input, ensure_ascii=False)
-                        if orig_str != new_str:
-                            total_replacements += count_occurrences(orig_str)
-                            msg_modified = True
-                            new_block = {**block, "input": replaced_input}
-
-                new_content.append(new_block)
+                        json_find = _json_escape_string(find_str)
+                        json_replace = _json_escape_string(replace_str)
+                        raw_count = orig_str.count(json_find)
+                        new_str = orig_str.replace(json_find, json_replace)
+                    if new_str != orig_str:
+                        try:
+                            parsed = json.loads(new_str)
+                        except json.JSONDecodeError:
+                            return ExecuteResult(
+                                success=False,
+                                error=f"raw_json replacement produced invalid JSON. Original: {orig_str[:100]}... Result: {new_str[:100]}...",
+                            )
+                        total_replacements += raw_count
+                        msg_modified = True
+                        new_block = {**block, "input": parsed}
+                else:
+                    replaced_input = replace_in_object(block["input"])
+                    orig_str = json.dumps(block["input"], ensure_ascii=False)
+                    new_str = json.dumps(replaced_input, ensure_ascii=False)
+                    if orig_str != new_str:
+                        total_replacements += count_occurrences(orig_str)
+                        msg_modified = True
+                        new_block = {**block, "input": replaced_input}
 
             if msg_modified:
-                new_messages[i] = {**msg, "content": new_content}
+                new_messages[i] = {**msg, "content": new_block}
                 messages_modified += 1
 
         if total_replacements == 0:
@@ -850,10 +802,8 @@ def execute_write_tool(
 
     elif name == "update_tool_content":
         ui_message_index = inp["message_index"]
-        block_index = inp["block_index"]
         direct_content = inp.get("content")
         source_message = inp.get("source_message")
-        source_block = inp.get("source_block")
 
         array_index = to_array_index(ui_message_index)
         if array_index < 0 or array_index >= len(new_messages):
@@ -863,28 +813,18 @@ def execute_write_tool(
             )
 
         message = new_messages[array_index]
-        blocks = list(message["content"])
-        if block_index < 0 or block_index >= len(blocks):
-            return ExecuteResult(success=False, error=f"Invalid block index: {block_index}")
-
-        block = blocks[block_index]
+        block = message["content"]
         if block.get("type") != "tool_use":
-            return ExecuteResult(success=False, error="Block is not a tool_use")
+            return ExecuteResult(success=False, error=f"Message {ui_message_index} is not a tool_use (got {block.get('type')})")
 
-        if source_message is not None and source_block is not None:
+        if source_message is not None:
             src_array_index = to_array_index(source_message)
             if src_array_index < 0 or src_array_index >= len(new_messages):
                 return ExecuteResult(
                     success=False,
                     error=f"Invalid source message index: {source_message}. Valid range: 1-{len(new_messages)}",
                 )
-            src_msg = new_messages[src_array_index]
-            if source_block < 0 or source_block >= len(src_msg["content"]):
-                return ExecuteResult(
-                    success=False,
-                    error=f"Invalid source block index: {source_block}",
-                )
-            src_block = src_msg["content"][source_block]
+            src_block = new_messages[src_array_index]["content"]
 
             if src_block.get("type") == "tool_use":
                 src_input = src_block.get("input", {})
@@ -896,7 +836,7 @@ def execute_write_tool(
             else:
                 return ExecuteResult(
                     success=False,
-                    error=f'Source block is type "{src_block.get("type")}" — expected tool_use or tool_result',
+                    error=f'Source message is type "{src_block.get("type")}" — expected tool_use or tool_result',
                 )
 
             # Strip line numbers from Read tool results
@@ -910,21 +850,21 @@ def execute_write_tool(
         else:
             return ExecuteResult(
                 success=False,
-                error="Either content or source_message + source_block must be provided",
+                error="Either content or source_message must be provided",
             )
 
-        blocks[block_index] = {
+        new_block = {
             **block,
             "input": {**block["input"], "content": content},
         }
-        new_messages[array_index] = {**message, "content": blocks}
+        new_messages[array_index] = {**message, "content": new_block}
 
         source_ref = (
-            f" (copied from message {source_message}, block {source_block})" if source_message is not None else ""
+            f" (copied from message {source_message})" if source_message is not None else ""
         )
         return ExecuteResult(
             success=True,
-            result=f"Updated tool content at message {ui_message_index}, block {block_index}{source_ref}",
+            result=f"Updated tool content at message {ui_message_index}{source_ref}",
             messages=new_messages,
         )
 

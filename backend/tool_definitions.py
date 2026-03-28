@@ -7,12 +7,13 @@ TOOL_DEFINITIONS = [
         "name": "get_messages",
         "description": """Get messages from the transcript. All indices are 1-indexed (first message is 1).
 
+Each message has a single content block (text, thinking, tool_use, or tool_result). Consecutive same-role messages are normal.
+
 LIST MODE (default): Returns truncated previews of messages in a range. Use to orient yourself.
 DETAIL MODE (single): When message_index is provided, returns full content of a single message with character-level pagination (offset/limit).
-BLOCK MODE: When message_index AND block_index are provided, returns the raw text content of a specific content block with character offsets shown. For text/thinking/tool_result blocks, shows the plain string content. For tool_use blocks, shows the JSON.stringify form of block.input (use input_key to view a specific string field instead — much easier to work with).
-FIELD MODE: When message_index, block_index, AND input_key are provided on a tool_use block, returns the plain string value of block.input[input_key] with character offsets. No JSON escaping — what you see is the actual string content. Use this before find_replace with input_key.
+FIELD MODE: When message_index AND input_key are provided on a tool_use message, returns the plain string value of input[input_key] with character offsets. No JSON escaping — what you see is the actual string content. Use this before find_replace with input_key.
 DETAIL MODE (range): When start/end are provided WITH limit, returns full content of multiple messages. Messages are included whole (not cut mid-message). If the total exceeds limit, returns as many complete messages as fit and indicates where to continue with next_start. To paginate, call again with start=next_start.
-SEARCH WITHIN MESSAGE: When message_index AND search are provided, returns only the content blocks within that message that match the search text, with previews showing context around each match. Useful for finding specific content in large messages.
+SEARCH WITHIN MESSAGE: When message_index AND search are provided, returns whether the message matches and shows a preview.
 
 Use range detail mode to read context across multiple messages efficiently in one call.""",
         "input_schema": {
@@ -22,15 +23,11 @@ Use range detail mode to read context across multiple messages efficiently in on
                 "end": {"type": "number", "description": "End index, 1-indexed (inclusive, default last)"},
                 "search": {
                     "type": "string",
-                    "description": "Search text. In list/range mode: filters to messages containing the text. In single message mode (with message_index): returns only matching content blocks with context previews.",
+                    "description": "Search text. In list/range mode: filters to messages containing the text. In single message mode (with message_index): returns whether the message matches with a preview.",
                 },
                 "message_index": {
                     "type": "number",
                     "description": "Single detail mode: Index of specific message to read (1-indexed)",
-                },
-                "block_index": {
-                    "type": "number",
-                    "description": "Block mode: Index of specific content block within the message (0-indexed). Returns raw text content with character offsets for use with find_replace.",
                 },
                 "input_key": {
                     "type": "string",
@@ -49,7 +46,7 @@ Use range detail mode to read context across multiple messages efficiently in on
     },
     {
         "name": "insert_message",
-        "description": "Insert a new message BEFORE the message currently at the given index. The new message takes the given index and existing messages shift down. Index is 1-indexed. Use index = (total messages + 1) to append at the end. Content must be an array of content blocks. Each message has a cwd (working directory) — use get_messages to see existing message formats and cwd values, and use a matching cwd for new messages.",
+        "description": "Insert a new message BEFORE the message currently at the given index. The new message takes the given index and existing messages shift down. Index is 1-indexed. Use index = (total messages + 1) to append at the end. Content is a single content block dict. Each message has a cwd (working directory) — use get_messages to see existing message formats and cwd values, and use a matching cwd for new messages.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -59,8 +56,8 @@ Use range detail mode to read context across multiple messages efficiently in on
                 },
                 "role": {"type": "string", "enum": ["user", "assistant"], "description": "Message role"},
                 "content": {
-                    "type": "array",
-                    "description": 'Array of content blocks, e.g. [{"type": "text", "text": "..."}] or [{"type": "tool_use", "id": "...", "name": "...", "input": {...}}]',
+                    "type": "object",
+                    "description": 'A single content block, e.g. {"type": "text", "text": "..."} or {"type": "tool_use", "id": "...", "name": "...", "input": {...}}',
                 },
                 "cwd": {
                     "type": "string",
@@ -72,14 +69,14 @@ Use range detail mode to read context across multiple messages efficiently in on
     },
     {
         "name": "update_message",
-        "description": "Update the content of an existing message. Index is 1-indexed. Content must be an array of content blocks.",
+        "description": "Update the content of an existing message. Index is 1-indexed. Content is a single content block dict.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "index": {"type": "number", "description": "Message index to update (1-indexed)"},
                 "content": {
-                    "type": "array",
-                    "description": 'Array of content blocks, e.g. [{"type": "text", "text": "..."}]',
+                    "type": "object",
+                    "description": 'A single content block, e.g. {"type": "text", "text": "..."}',
                 },
             },
             "required": ["index", "content"],
@@ -117,7 +114,7 @@ Use range detail mode to read context across multiple messages efficiently in on
         "name": "replace_messages",
         "description": """Replace a contiguous range of messages with a new set of messages. The new set can be a different length than the range being replaced. Both start and end are 1-indexed and inclusive. Use get_messages first to read the existing messages in the range.
 
-This is especially powerful for bulk updates across multiple messages at once — for example, restructuring a sequence of tool calls, rewriting a multi-step interaction, or replacing an entire section of the transcript. Each replacement message needs role, content (array of content blocks), and cwd. The content blocks work the same as in insert_message.""",
+This is especially powerful for bulk updates across multiple messages at once — for example, restructuring a sequence of tool calls, rewriting a multi-step interaction, or replacing an entire section of the transcript. Each replacement message needs role, content (single content block dict), and cwd.""",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -125,12 +122,12 @@ This is especially powerful for bulk updates across multiple messages at once �
                 "end": {"type": "number", "description": "End index of range to replace (1-indexed, inclusive)"},
                 "messages": {
                     "type": "array",
-                    "description": "Array of new messages to insert in place of the range. Each message has role, content (array of content blocks), and cwd.",
+                    "description": "Array of new messages to insert in place of the range. Each message has role, content (single content block dict), and cwd.",
                     "items": {
                         "type": "object",
                         "properties": {
                             "role": {"type": "string", "enum": ["user", "assistant"], "description": "Message role"},
-                            "content": {"type": "array", "description": "Array of content blocks"},
+                            "content": {"type": "object", "description": "A single content block dict"},
                             "cwd": {"type": "string", "description": "Working directory path for this message"},
                         },
                         "required": ["role", "content", "cwd"],
@@ -142,25 +139,20 @@ This is especially powerful for bulk updates across multiple messages at once �
     },
     {
         "name": "update_tool_content",
-        "description": """Update the file content inside a Write tool_use block. Message index is 1-indexed.
+        "description": """Update the file content inside a Write tool_use message. Message index is 1-indexed.
 
-You can either provide the content directly, or use source_message + source_block to copy content from another tool block. When using a source reference, the tool automatically handles format normalization (e.g., stripping line numbers from Read results when copying to Write inputs).""",
+You can either provide the content directly, or use source_message to copy content from another tool message. When using a source reference, the tool automatically handles format normalization (e.g., stripping line numbers from Read results when copying to Write inputs).""",
         "input_schema": {
             "type": "object",
             "properties": {
                 "message_index": {"type": "number", "description": "Message index containing the tool_use (1-indexed)"},
-                "block_index": {"type": "number", "description": "Content block index within the message (0-indexed)"},
                 "content": {"type": "string", "description": "New file content (omit if using source reference)"},
                 "source_message": {
                     "type": "number",
-                    "description": "Copy content from this message index (1-indexed). Must be used with source_block.",
-                },
-                "source_block": {
-                    "type": "number",
-                    "description": "Copy content from this block index (0-indexed) in the source message.",
+                    "description": "Copy content from this message index (1-indexed). The source must be a tool_use or tool_result message.",
                 },
             },
-            "required": ["message_index", "block_index"],
+            "required": ["message_index"],
         },
     },
     {

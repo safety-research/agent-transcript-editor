@@ -112,14 +112,16 @@ class UnknownAttributeError(ValueError):
     pass
 
 
-def extract_minimal_content(content: Any, strict: bool = True) -> list:
+def extract_minimal_blocks(content: Any, strict: bool = True) -> list[dict]:
     """Extract minimal content blocks from message content.
+
+    Returns a list of individual block dicts (one per block in the source).
 
     Args:
         content: Raw message content (string, list, or other).
         strict: If True, error on unknown block types or tool names.
     """
-    # Normalize string content to array format
+    # Normalize string content to single block
     if isinstance(content, str):
         return [{"type": "text", "text": content}]
 
@@ -137,7 +139,7 @@ def extract_minimal_content(content: Any, strict: bool = True) -> list:
             raise UnknownBlockTypeError(
                 f"Unknown content block type: {block_type!r}. "
                 f"Known types: {sorted(KNOWN_BLOCK_TYPES)}. "
-                f"Add it to KNOWN_BLOCK_TYPES and handle it in extract_minimal_content(), "
+                f"Add it to KNOWN_BLOCK_TYPES and handle it in extract_minimal_blocks(), "
                 f"or pass --no-strict to skip validation."
             )
 
@@ -147,7 +149,7 @@ def extract_minimal_content(content: Any, strict: bool = True) -> list:
                 raise UnknownAttributeError(
                     f"Unknown attribute(s) {extra_attrs} on {block_type!r} block. "
                     f"Known attributes for {block_type!r}: {sorted(KNOWN_BLOCK_ATTRIBUTES[block_type])}. "
-                    f"Add to KNOWN_BLOCK_ATTRIBUTES and preserve in extract_minimal_content(), "
+                    f"Add to KNOWN_BLOCK_ATTRIBUTES and preserve in extract_minimal_blocks(), "
                     f"or pass --no-strict to skip validation."
                 )
 
@@ -193,43 +195,55 @@ def extract_minimal_content(content: Any, strict: bool = True) -> list:
     return minimal_blocks
 
 
-def convert_entry(entry: dict, preserve_cwd: bool = True, strict: bool = True) -> dict | None:
-    """Convert a transcript entry to minimal format.
+def convert_entry(entry: dict, preserve_cwd: bool = True, strict: bool = True) -> list[dict]:
+    """Convert a transcript entry to minimal format entries (one per block).
 
     Handles both full format (with type/message wrapper) and
     already-minimal format (just role/content).
+
+    Returns a list of entries, one per content block. Each entry has
+    content as a single dict (not a list).
     """
+    role = None
+    content = None
+    cwd = None
+
     # Check if already in minimal format (has role directly)
     if "role" in entry and "content" in entry and "type" not in entry:
         role = entry.get("role")
         content = entry.get("content")
-        if role in ("user", "assistant"):
-            result = {"role": role, "content": extract_minimal_content(content, strict=strict)}
-            # Preserve cwd if present and requested
-            if preserve_cwd and entry.get("cwd"):
-                result["cwd"] = entry["cwd"]
-            return result
-        return None
+        cwd = entry.get("cwd")
+    elif "type" in entry:
+        # Full format with type/message wrapper
+        entry_type = entry.get("type")
+        if entry_type not in ("user", "assistant"):
+            return []
+        role = entry_type
+        message = entry.get("message", {})
+        content = message.get("content")
+        cwd = entry.get("cwd")
 
-    # Full format with type/message wrapper
-    entry_type = entry.get("type")
+    if role not in ("user", "assistant") or content is None:
+        return []
 
-    # Only process user and assistant entries
-    if entry_type not in ("user", "assistant"):
-        return None
+    # If content is already a single dict (new format), just validate and return
+    if isinstance(content, dict):
+        result = {"role": role, "content": content}
+        if preserve_cwd and cwd:
+            result["cwd"] = cwd
+        return [result]
 
-    message = entry.get("message", {})
-    role = message.get("role")
-    content = message.get("content")
+    # Extract blocks from old list/string format
+    blocks = extract_minimal_blocks(content, strict=strict)
 
-    if not role or content is None:
-        return None
-
-    result = {"role": role, "content": extract_minimal_content(content, strict=strict)}
-    # Preserve cwd if present and requested
-    if preserve_cwd and entry.get("cwd"):
-        result["cwd"] = entry["cwd"]
-    return result
+    # Return one entry per block
+    entries = []
+    for block in blocks:
+        result = {"role": role, "content": block}
+        if preserve_cwd and cwd:
+            result["cwd"] = cwd
+        entries.append(result)
+    return entries
 
 
 def minimize_transcript(
@@ -259,14 +273,14 @@ def minimize_transcript(
             continue
 
         try:
-            minimal = convert_entry(entry, preserve_cwd=preserve_cwd, strict=strict)
+            entries = convert_entry(entry, preserve_cwd=preserve_cwd, strict=strict)
         except (UnknownBlockTypeError, UnknownToolNameError, UnknownAttributeError) as e:
             raise type(e)(f"Line {i + 1}: {e}") from None
 
-        if minimal:
+        for minimal in entries:
             # Optionally filter out thinking blocks
-            if not keep_thinking and isinstance(minimal["content"], list):
-                minimal["content"] = [b for b in minimal["content"] if b.get("type") != "thinking"]
+            if not keep_thinking and minimal["content"].get("type") == "thinking":
+                continue
             messages.append(minimal)
 
     return messages

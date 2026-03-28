@@ -50,18 +50,26 @@ def generate_tool_id() -> str:
 
 
 def _get_content_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract content blocks from a transcript entry (either format).
+    """Extract content blocks from a transcript entry.
 
-    Supports both:
-      Simple/API format: {"role": ..., "content": [...]}
-      Full Claude Code format: {"type": ..., "message": {"content": [...]}}
+    In the single-block-per-line format, content is a single dict.
+    Returns it as a one-element list for uniform iteration.
+
+    Also supports full Claude Code format: {"type": ..., "message": {"content": [...]}}
     """
-    # Simple format
+    # Minimal format: content is a single block dict
     if "role" in raw and "content" in raw and "type" not in raw:
-        content = raw.get("content", [])
-        return content if isinstance(content, list) else []
+        content = raw.get("content")
+        if isinstance(content, dict):
+            return [content]
+        if isinstance(content, list):
+            raise ValueError(
+                "content is a list (old format detected). "
+                "Expected single-block-per-line format where content is a dict."
+            )
+        return []
 
-    # Full format
+    # Full format (pre-minimized)
     if "type" in raw and "message" in raw:
         message = raw.get("message", {})
         if isinstance(message, dict):
@@ -72,9 +80,10 @@ def _get_content_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _get_role(raw: dict[str, Any]) -> str | None:
-    """Extract role from a transcript entry (either format)."""
+    """Extract role from a transcript entry."""
     if "role" in raw and "type" not in raw:
         return raw.get("role")
+    # Full format (pre-minimized)
     if "type" in raw and "message" in raw:
         message = raw.get("message", {})
         if isinstance(message, dict):
@@ -174,32 +183,32 @@ def verify_tool_ids(transcript_path: Path) -> list[ToolIdIssue]:
                 )
             )
 
-    # Check for positional mismatches between assistant→user message pairs
-    pending_use_ids: list[tuple[str, int]] | None = None  # (id, line_num) from last assistant
+    # Check for positional mismatches between assistant→user message groups
+    # In single-block-per-line format, consecutive assistant lines with tool_use
+    # form a group, followed by consecutive user lines with tool_result
+    pending_use_ids: list[tuple[str, int]] = []  # (id, line_num) accumulated from assistant lines
+    prev_role = None
     for line_num, raw in parsed_entries:
         role = _get_role(raw)
-        if role == "assistant":
-            # Collect tool_use IDs in order
-            blocks = _get_content_blocks(raw)
-            use_ids = [
-                (block["id"], line_num)
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block
-            ]
-            pending_use_ids = use_ids if use_ids else None
 
-        elif role == "user" and pending_use_ids is not None:
-            blocks = _get_content_blocks(raw)
-            result_ids = [
-                (block["tool_use_id"], line_num)
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block
-            ]
+        # When role switches from assistant to user, start collecting results
+        if role == "user" and prev_role == "assistant" and pending_use_ids:
+            # Now collect consecutive user tool_result lines
+            result_ids: list[tuple[str, int]] = []
+            # Process this and following user messages
+            start_idx = parsed_entries.index((line_num, raw))
+            for j in range(start_idx, len(parsed_entries)):
+                r_line_num, r_raw = parsed_entries[j]
+                r_role = _get_role(r_raw)
+                if r_role != "user":
+                    break
+                r_blocks = _get_content_blocks(r_raw)
+                for block in r_blocks:
+                    if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block:
+                        result_ids.append((block["tool_use_id"], r_line_num))
 
             if result_ids and len(pending_use_ids) == len(result_ids):
-                for i, ((use_id, _use_ln), (res_id, res_ln)) in enumerate(
-                    zip(pending_use_ids, result_ids)
-                ):
+                for i, ((use_id, _use_ln), (res_id, res_ln)) in enumerate(zip(pending_use_ids, result_ids)):
                     if use_id != res_id:
                         issues.append(
                             ToolIdIssue(
@@ -209,8 +218,17 @@ def verify_tool_ids(transcript_path: Path) -> list[ToolIdIssue]:
                                 issue=f"Positional mismatch at position {i}: tool_use has {use_id!r} but tool_result has {res_id!r}",
                             )
                         )
+            pending_use_ids = []
 
-            pending_use_ids = None
+        if role == "assistant":
+            blocks = _get_content_blocks(raw)
+            for block in blocks:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block:
+                    pending_use_ids.append((block["id"], line_num))
+        elif role != "user":
+            pending_use_ids = []
+
+        prev_role = role
 
     return issues
 
@@ -310,28 +328,30 @@ def fix_transcript(input_lines: list[str]) -> tuple[list[str], dict[str, str], i
         _collect_ids_from_blocks(blocks, id_map)
 
     # Pass 2: find positional mismatches and add to id_map
+    # Accumulate tool_use IDs across consecutive assistant lines,
+    # then match against consecutive user tool_result lines
     positional_fixes = 0
-    pending_use_ids: list[str] | None = None
-    for entry in entries:
+    pending_use_ids: list[str] = []
+    prev_role = None
+    for idx, entry in enumerate(entries):
         role = _get_role(entry)
         blocks = _get_content_blocks(entry)
-        if role == "assistant":
-            use_ids = [
-                block["id"]
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block
-            ]
-            pending_use_ids = use_ids if use_ids else None
-        elif role == "user" and pending_use_ids is not None:
-            result_blocks = [
-                block
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block
-            ]
+
+        if role == "user" and prev_role == "assistant" and pending_use_ids:
+            # Collect consecutive user tool_result blocks
+            result_blocks = []
+            for j in range(idx, len(entries)):
+                r_role = _get_role(entries[j])
+                if r_role != "user":
+                    break
+                r_blocks = _get_content_blocks(entries[j])
+                for block in r_blocks:
+                    if isinstance(block, dict) and block.get("type") == "tool_result" and "tool_use_id" in block:
+                        result_blocks.append(block)
+
             if len(result_blocks) == len(pending_use_ids):
                 for use_id, result_block in zip(pending_use_ids, result_blocks):
                     res_id = result_block["tool_use_id"]
-                    # Map the result ID to the use ID (use ID is already mapped)
                     mapped_use_id = id_map.get(use_id, use_id)
                     mapped_res_id = id_map.get(res_id, res_id)
                     if mapped_res_id != mapped_use_id:
@@ -343,25 +363,30 @@ def fix_transcript(input_lines: list[str]) -> tuple[list[str], dict[str, str], i
                     f"tool_result count ({len(result_blocks)}), skipping positional fix\033[0m",
                     file=sys.stderr,
                 )
-            pending_use_ids = None
+            pending_use_ids = []
+
+        if role == "assistant":
+            for block in blocks:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and "id" in block:
+                    pending_use_ids.append(block["id"])
+        elif role != "user":
+            pending_use_ids = []
+
+        prev_role = role
 
     # Pass 3: string-replace on raw lines (only IDs that actually changed)
+    # Use re.sub with a single pass to avoid substring collisions — short
+    # placeholders like "toolu_01D" can match inside already-replaced IDs
+    # (e.g. a generated ID starting with "toolu_01D...").
     replacements = {old: new for old, new in id_map.items() if old != new}
     output_lines = list(input_lines)
     if replacements:
+        # Build a single regex that matches any old ID, longest first
+        sorted_old = sorted(replacements.keys(), key=len, reverse=True)
+        pattern = re.compile("|".join(re.escape(old) for old in sorted_old))
         for i in valid_line_indices:
             line = output_lines[i]
-            for old_id, new_id in replacements.items():
-                count = line.count(old_id)
-                if count == 0:
-                    continue
-                if count != 1:
-                    raise ValueError(
-                        f"Tool ID {old_id!r} appears {count} times on line {i + 1} "
-                        f"(expected exactly 1) — aborting to avoid incorrect replacement"
-                    )
-                line = line.replace(old_id, new_id)
-            output_lines[i] = line
+            output_lines[i] = pattern.sub(lambda m: replacements[m.group(0)], line)
 
     return output_lines, id_map, positional_fixes
 
@@ -377,7 +402,7 @@ def fix_transcript_file(transcript_path: Path, output_path: Path) -> tuple[int, 
     lines = transcript_path.read_text(encoding="utf-8").splitlines()
     output_lines, id_map, positional_fixes = fix_transcript(lines)
     output_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
-    entry_count = sum(1 for l in lines if l.strip())
+    entry_count = sum(1 for line in lines if line.strip())
     return entry_count, len(id_map), positional_fixes
 
 
@@ -442,7 +467,7 @@ Examples:
     # Fix IDs
     output_lines, id_map, positional_fixes = fix_transcript(lines)
 
-    entry_count = sum(1 for l in lines if l.strip())
+    entry_count = sum(1 for line in lines if line.strip())
     if entry_count == 0:
         print("Warning: No entries found in transcript", file=sys.stderr)
 

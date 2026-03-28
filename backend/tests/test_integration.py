@@ -262,7 +262,7 @@ class TestSubmitAndSave:
         file_path = transcripts_dir / "test-project" / "sample.jsonl"
         original_messages = read_transcript(file_path)
 
-        new_msg_content = [{"type": "text", "text": "Injected by test"}]
+        new_msg_content = {"type": "text", "text": "Injected by test"}
         mock_client = make_mock_anthropic_client(
             [
                 *make_tool_call_events(
@@ -305,7 +305,7 @@ class TestSubmitAndSave:
         # Verify file on disk was updated
         updated = read_transcript(file_path)
         assert len(updated) == len(original_messages) + 1
-        assert updated[-1]["content"][0]["text"] == "Injected by test"
+        assert updated[-1]["content"]["text"] == "Injected by test"
 
 
 class TestReset:
@@ -322,7 +322,7 @@ class TestReset:
                     {
                         "index": 5,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "test"}],
+                        "content": {"type": "text", "text": "test"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -407,7 +407,7 @@ class TestSessionPersistence:
                     {
                         "index": 5,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "Persisted message"}],
+                        "content": {"type": "text", "text": "Persisted message"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -452,7 +452,7 @@ class TestChildLock:
                     {
                         "index": 5,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "First edit"}],
+                        "content": {"type": "text", "text": "First edit"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -465,7 +465,7 @@ class TestChildLock:
                     {
                         "index": 6,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "Should be blocked"}],
+                        "content": {"type": "text", "text": "Should be blocked"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -519,7 +519,7 @@ class TestWriteWithMonitor:
                     {
                         "index": 5,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "Attack message"}],
+                        "content": {"type": "text", "text": "Attack message"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -873,7 +873,7 @@ class TestMultiIterationLoop:
                     {
                         "index": original_count + 1,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "First insert"}],
+                        "content": {"type": "text", "text": "First insert"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -885,7 +885,7 @@ class TestMultiIterationLoop:
                     {
                         "index": original_count + 2,
                         "role": "user",
-                        "content": [{"type": "text", "text": "Second insert"}],
+                        "content": {"type": "text", "text": "Second insert"},
                         "cwd": "/home/user/project",
                     },
                 ),
@@ -914,8 +914,8 @@ class TestMultiIterationLoop:
         # Disk should have both insertions
         updated = read_transcript(file_path)
         assert len(updated) == original_count + 2
-        assert updated[-2]["content"][0]["text"] == "First insert"
-        assert updated[-1]["content"][0]["text"] == "Second insert"
+        assert updated[-2]["content"]["text"] == "First insert"
+        assert updated[-1]["content"]["text"] == "Second insert"
 
 
 class TestForkFlow:
@@ -1035,7 +1035,7 @@ class TestLockFirstMessage:
                         "messages": [
                             {
                                 "role": "user",
-                                "content": [{"type": "text", "text": "Modified first message"}],
+                                "content": {"type": "text", "text": "Modified first message"},
                                 "cwd": "/home/user/project",
                             }
                         ],
@@ -1321,7 +1321,7 @@ class TestNEvalsOtherMetrics:
         request = EvaluateFileRequest(
             project="test",
             file_name="test.jsonl",
-            transcript=[{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
+            transcript=[{"role": "user", "content": {"type": "text", "text": "hi"}}],
             n_evals=5,
             n_evals_other=1,
             prompt_variants=["control_arena"],
@@ -1349,7 +1349,7 @@ class TestNEvalsOtherMetrics:
             request = EvaluateFileRequest(
                 project="test",
                 file_name="test.jsonl",
-                transcript=[{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
+                transcript=[{"role": "user", "content": {"type": "text", "text": "hi"}}],
                 outcome="bad thing happened",
                 scenario="test scenario",
                 mechanism="step 1",

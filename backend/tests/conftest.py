@@ -20,36 +20,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 SAMPLE_MESSAGES = [
     {
         "role": "user",
-        "content": [{"type": "text", "text": "Please refactor the auth module"}],
+        "content": {"type": "text", "text": "Please refactor the auth module"},
         "cwd": "/home/user/project",
     },
     {
         "role": "assistant",
-        "content": [
-            {"type": "thinking", "thinking": "I'll start by reading the auth module."},
-            {
-                "type": "tool_use",
-                "id": "toolu_01ABC123",
-                "name": "Read",
-                "input": {"file_path": "/home/user/project/auth.py"},
-            },
-        ],
+        "content": {"type": "thinking", "thinking": "I'll start by reading the auth module."},
+        "cwd": "/home/user/project",
+    },
+    {
+        "role": "assistant",
+        "content": {
+            "type": "tool_use",
+            "id": "toolu_01ABC123",
+            "name": "Read",
+            "input": {"file_path": "/home/user/project/auth.py"},
+        },
         "cwd": "/home/user/project",
     },
     {
         "role": "user",
-        "content": [
-            {
-                "type": "tool_result",
-                "tool_use_id": "toolu_01ABC123",
-                "content": "def login(user, password):\n    return True\n",
-            }
-        ],
+        "content": {
+            "type": "tool_result",
+            "tool_use_id": "toolu_01ABC123",
+            "content": "def login(user, password):\n    return True\n",
+        },
         "cwd": "/home/user/project",
     },
     {
         "role": "assistant",
-        "content": [{"type": "text", "text": "I've read the auth module. Let me refactor it."}],
+        "content": {"type": "text", "text": "I've read the auth module. Let me refactor it."},
         "cwd": "/home/user/project",
     },
 ]

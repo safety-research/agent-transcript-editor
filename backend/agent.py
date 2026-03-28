@@ -201,14 +201,10 @@ def _add_cache_breakpoints(messages: list[dict[str, Any]]) -> list[dict[str, Any
 
     if isinstance(content, str):
         # Convert string content to block format with cache_control
-        msg["content"] = [
-            {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}},
-        ]
-    elif isinstance(content, list) and content:
-        # Add cache_control to the last block
-        content = list(content)
-        content[-1] = {**content[-1], "cache_control": {"type": "ephemeral"}}
-        msg["content"] = content
+        msg["content"] = {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+    elif isinstance(content, dict):
+        # Add cache_control to the content block
+        msg["content"] = {**content, "cache_control": {"type": "ephemeral"}}
 
     result[last_user_idx] = msg
     return result
@@ -218,16 +214,19 @@ CREATION_SYSTEM_PROMPT_ADDITION = """
 
 You are creating a new transcript from scratch in minimal JSONL format.
 
-A transcript is a sequence of alternating user/assistant messages representing a Claude Code session.
+A transcript is a sequence of messages representing a Claude Code session.
+Each message has a single content block. Consecutive same-role messages are normal.
 The user sends text prompts and tool results. The assistant responds with text, thinking, and tool calls.
 
 Format rules:
-- First message is always role: "user" with a text block containing the task
-- Assistant messages contain thinking blocks, text blocks, and/or tool_use blocks
-- After tool_use, next user message must contain tool_result with matching tool_use_id
+- First message is always role: "user" with content: {"type": "text", "text": "..."}
+- Each message has exactly ONE content block (a dict, not an array)
+- Assistant text: {"role": "assistant", "content": {"type": "text", "text": "..."}}
+- Assistant tool call: {"role": "assistant", "content": {"type": "tool_use", "id": "toolu_01...", "name": "Read", "input": {...}}}
+- User tool result: {"role": "user", "content": {"type": "tool_result", "tool_use_id": "toolu_01...", "content": "..."}}
+- Thinking: {"role": "assistant", "content": {"type": "thinking", "thinking": "..."}}
 - tool_use ids must be "toolu_01" + 22 random alphanumeric chars
 - Every message has a "cwd" field (e.g. "/home/user/project")
-- Thinking blocks: { type: "thinking", thinking: "..." }
 - Tool names should be realistic Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, etc.
 
 Build the transcript incrementally using insert_message. Start with the user task, then build out
