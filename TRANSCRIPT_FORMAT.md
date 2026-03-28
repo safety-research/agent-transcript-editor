@@ -1,57 +1,60 @@
 # Transcript Format Specification
 
-The transcript editor works with **minimal JSONL** format — one JSON object per line, representing a conversation between a user and an AI assistant (Claude Code).
+The transcript editor works with **minimal JSONL** format — one JSON object per line, each containing a single content block.
 
 ## Message Structure
 
 Each line is a JSON object with:
 
 ```json
-{"role": "user"|"assistant", "content": [<content blocks>], "cwd": "/path/to/workdir"}
+{"role": "user"|"assistant", "content": {<single content block>}, "cwd": "/path/to/workdir"}
 ```
 
 - **role**: `"user"` or `"assistant"`
-- **content**: An array of content blocks (never a plain string — use `[{"type": "text", "text": "..."}]` instead)
+- **content**: A single content block (always a dict with a `"type"` field — never an array or plain string)
 - **cwd**: (optional) The working directory at the time of this message
+
+Consecutive same-role messages are normal and expected (e.g., an assistant thinking block followed by a tool_use block are two separate lines).
 
 ## Content Blocks
 
-When `content` is an array, each element is one of:
+Each message contains exactly one content block:
 
 ### Text
 ```json
-{"type": "text", "text": "Hello, how can I help?"}
+{"role": "assistant", "content": {"type": "text", "text": "Hello, how can I help?"}}
 ```
 
 ### Thinking (extended thinking / chain of thought)
 ```json
-{"type": "thinking", "thinking": "Let me analyze this...", "signature": "..."}
+{"role": "assistant", "content": {"type": "thinking", "thinking": "Let me analyze this..."}}
 ```
 
 ### Tool Use (assistant calls a tool)
 ```json
-{
-  "type": "tool_use",
-  "id": "toolu_01AbCdEf...",
-  "name": "Bash",
-  "input": {"command": "ls -la", "description": "List files"}
-}
+{"role": "assistant", "content": {"type": "tool_use", "id": "toolu_01AbCdEf...", "name": "Bash", "input": {"command": "ls -la", "description": "List files"}}}
 ```
 
 Tool IDs must match the format `toolu_01` + Base58 characters. The editor auto-fixes non-conforming IDs.
 
 ### Tool Result (user provides tool output)
 ```json
-{
-  "type": "tool_result",
-  "tool_use_id": "toolu_01AbCdEf...",
-  "content": "file1.txt\nfile2.txt"
-}
+{"role": "user", "content": {"type": "tool_result", "tool_use_id": "toolu_01AbCdEf...", "content": "file1.txt\nfile2.txt"}}
 ```
 
-The `tool_use_id` must match a `tool_use` block's `id` in the preceding assistant message.
+The `tool_use_id` must match a `tool_use` block's `id` in a preceding assistant message.
 
-`content` can also be an array of text/image blocks for rich results.
+`content` inside a tool_result can also be an array of text/image blocks for rich results.
+
+## Example Transcript
+
+```jsonl
+{"role": "user", "content": {"type": "text", "text": "Please read the config file"}, "cwd": "/home/user/project"}
+{"role": "assistant", "content": {"type": "thinking", "thinking": "I'll read the config file."}, "cwd": "/home/user/project"}
+{"role": "assistant", "content": {"type": "tool_use", "id": "toolu_01AbCdEfGhIjKlMnOpQrSt", "name": "Read", "input": {"file_path": "/home/user/project/config.yaml"}}, "cwd": "/home/user/project"}
+{"role": "user", "content": {"type": "tool_result", "tool_use_id": "toolu_01AbCdEfGhIjKlMnOpQrSt", "content": "port: 8080\nhost: localhost"}, "cwd": "/home/user/project"}
+{"role": "assistant", "content": {"type": "text", "text": "The config file sets port 8080 on localhost."}, "cwd": "/home/user/project"}
+```
 
 ## Common Tool Names
 

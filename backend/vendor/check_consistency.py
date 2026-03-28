@@ -175,27 +175,29 @@ def detect_bash_file_modifications(command: str) -> list[str]:
 
 
 def extract_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract tool_use blocks from a message's content."""
-    content = message.get("content", [])
-    if isinstance(content, str):
+    """Extract tool_use blocks from a message's content.
+
+    Content is a single block dict in the new format.
+    """
+    content = message.get("content")
+    if not isinstance(content, dict):
         return []
-    tools = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "tool_use":
-            tools.append(block)
-    return tools
+    if content.get("type") == "tool_use":
+        return [content]
+    return []
 
 
 def extract_tool_results(message: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract tool_result blocks from a message's content."""
-    content = message.get("content", [])
-    if isinstance(content, str):
+    """Extract tool_result blocks from a message's content.
+
+    Content is a single block dict in the new format.
+    """
+    content = message.get("content")
+    if not isinstance(content, dict):
         return []
-    results = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "tool_result":
-            results.append(block)
-    return results
+    if content.get("type") == "tool_result":
+        return [content]
+    return []
 
 
 def get_result_text(result: dict[str, Any]) -> str | None:

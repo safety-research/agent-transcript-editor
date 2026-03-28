@@ -36,7 +36,7 @@ class TestInsertMessage:
             {
                 "index": 1,
                 "role": "user",
-                "content": [{"type": "text", "text": "New first message"}],
+                "content": {"type": "text", "text": "New first message"},
                 "cwd": "/home/user/project",
             },
             messages,
@@ -44,7 +44,7 @@ class TestInsertMessage:
         assert result.success
         assert result.messages is not None
         assert len(result.messages) == len(messages) + 1
-        assert result.messages[0]["content"][0]["text"] == "New first message"
+        assert result.messages[0]["content"]["text"] == "New first message"
         assert result.message_op == {"type": "insert", "index": 1}
 
     def test_insert_at_end(self, messages):
@@ -53,7 +53,7 @@ class TestInsertMessage:
             {
                 "index": len(messages) + 1,
                 "role": "assistant",
-                "content": [{"type": "text", "text": "Appended message"}],
+                "content": {"type": "text", "text": "Appended message"},
                 "cwd": "/home/user/project",
             },
             messages,
@@ -61,7 +61,7 @@ class TestInsertMessage:
         assert result.success
         assert result.messages is not None
         assert len(result.messages) == len(messages) + 1
-        assert result.messages[-1]["content"][0]["text"] == "Appended message"
+        assert result.messages[-1]["content"]["text"] == "Appended message"
 
     def test_insert_in_middle(self, messages):
         result = execute_write_tool(
@@ -69,13 +69,13 @@ class TestInsertMessage:
             {
                 "index": 3,
                 "role": "user",
-                "content": [{"type": "text", "text": "Middle message"}],
+                "content": {"type": "text", "text": "Middle message"},
                 "cwd": "/home/user/project",
             },
             messages,
         )
         assert result.success
-        assert result.messages[2]["content"][0]["text"] == "Middle message"
+        assert result.messages[2]["content"]["text"] == "Middle message"
         # Original message 3 should now be at index 3 (0-indexed)
         assert result.messages[3]["role"] == messages[2]["role"]
 
@@ -85,7 +85,7 @@ class TestInsertMessage:
             {
                 "index": 0,
                 "role": "user",
-                "content": [{"type": "text", "text": "Bad"}],
+                "content": {"type": "text", "text": "Bad"},
                 "cwd": "/home/user/project",
             },
             messages,
@@ -100,7 +100,7 @@ class TestInsertMessage:
             {
                 "index": 1,
                 "role": "user",
-                "content": [{"type": "text", "text": "New"}],
+                "content": {"type": "text", "text": "New"},
                 "cwd": "/home/user/project",
             },
             messages,
@@ -179,7 +179,7 @@ class TestFindReplace:
         assert result.success
         # Check the replacement happened in the user message
         first_msg = result.messages[0]
-        assert "authentication system" in first_msg["content"][0]["text"]
+        assert "authentication system" in first_msg["content"]["text"]
 
     def test_regex_replace(self, messages):
         result = execute_write_tool(
@@ -210,9 +210,9 @@ class TestFindReplace:
         )
         assert result.success
         # Only first message should be modified
-        assert "AUTH" in result.messages[0]["content"][0]["text"]
+        assert "AUTH" in result.messages[0]["content"]["text"]
         # Message 2 should be unchanged (has "auth" in thinking)
-        assert "auth" in result.messages[1]["content"][0]["thinking"]
+        assert "auth" in result.messages[1]["content"]["thinking"]
 
     def test_replaces_in_tool_use_input(self, messages):
         result = execute_write_tool(
@@ -221,29 +221,24 @@ class TestFindReplace:
             messages,
         )
         assert result.success
-        # Check tool_use input was updated
-        tool_use_block = result.messages[1]["content"][1]
-        assert tool_use_block["input"]["file_path"] == "/home/user/project/authentication.py"
+        # Check tool_use input was updated (tool_use is now message 3, 0-indexed=2)
+        tool_use_msg = result.messages[2]
+        assert tool_use_msg["content"]["input"]["file_path"] == "/home/user/project/authentication.py"
 
     def test_raw_json_escapes_find_string(self):
         """raw_json mode should auto-escape control chars in find/replace strings."""
         messages = [
             {
                 "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": "toolu_01X",
-                        "name": "Write",
-                        "input": {"file_path": "/test.py", "content": "line1\tindented\nline2\tmore"},
-                    }
-                ],
+                "content": {
+                    "type": "tool_use",
+                    "id": "toolu_01X",
+                    "name": "Write",
+                    "input": {"file_path": "/test.py", "content": "line1\tindented\nline2\tmore"},
+                },
                 "cwd": "/test",
             }
         ]
-        # The JSON-serialized input has \t and \n as escape sequences.
-        # The find string "line1\tindented" has a real tab after JSON parsing.
-        # raw_json should auto-escape it to match the JSON representation.
         result = execute_write_tool(
             "find_replace",
             {
@@ -255,21 +250,19 @@ class TestFindReplace:
             messages,
         )
         assert result.success
-        assert result.messages[0]["content"][0]["input"]["content"] == "line1\tREPLACED\nline2\tmore"
+        assert result.messages[0]["content"]["input"]["content"] == "line1\tREPLACED\nline2\tmore"
 
     def test_raw_json_plain_text_still_works(self):
         """raw_json should still match plain text without special characters."""
         messages = [
             {
                 "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": "toolu_01X",
-                        "name": "Bash",
-                        "input": {"command": "echo 192.0"},
-                    }
-                ],
+                "content": {
+                    "type": "tool_use",
+                    "id": "toolu_01X",
+                    "name": "Bash",
+                    "input": {"command": "echo 192.0"},
+                },
                 "cwd": "/test",
             }
         ]
@@ -279,20 +272,18 @@ class TestFindReplace:
             messages,
         )
         assert result.success
-        assert result.messages[0]["content"][0]["input"]["command"] == "echo 193.0"
+        assert result.messages[0]["content"]["input"]["command"] == "echo 193.0"
 
     def test_find_replace_non_string_tool_result(self):
         """find_replace should handle non-string tool_result content without crashing."""
         messages = [
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": "toolu_01X",
-                        "content": [{"type": "text", "text": "Score: 192.0"}],
-                    }
-                ],
+                "content": {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_01X",
+                    "content": [{"type": "text", "text": "Score: 192.0"}],
+                },
                 "cwd": "/test",
             }
         ]
@@ -302,7 +293,7 @@ class TestFindReplace:
             messages,
         )
         assert result.success
-        assert result.messages[0]["content"][0]["content"][0]["text"] == "Score: 193.0"
+        assert result.messages[0]["content"]["content"][0]["text"] == "Score: 193.0"
 
 
 # ── remap_mechanism_keys ─────────────────────────────────────────────────
