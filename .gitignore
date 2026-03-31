@@ -29,6 +29,7 @@ __pycache__/
 *.pyc
 backend/venv/
 backend/.env
+backend/.te_state.json
 
 # User-specific / research files
 overnight-*.json
